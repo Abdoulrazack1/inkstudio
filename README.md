@@ -18,9 +18,22 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 ### 🎙 Voice-over with real sync
 - Import your narration (mp3, wav, ogg, m4a…) — waveform appears under the scene strip
 - **Click the waveform to pin the current scene to that moment** of the audio; drag pins to adjust, double-click to unpin
+- **✨ Auto-sync**: detects the pauses in your narration and places one scene marker per pause
+- **Colored segments** on the waveform show each scene's time slot, with its measured drawing time — and a ⚠ hatched warning when a scene draws longer than its slot
+- **Audition anywhere**: click a pin (or Shift+click the waveform) to listen from that point
 - During playback and export **the audio is the master clock**: each pinned scene starts exactly on its marker (a scene still drawing gets snapped to its final frame so the narration never drifts)
 - The voice-over is **muxed into the exported video** — AAC in MP4, Opus/Vorbis in WebM
 - MP4 export is now paced to real time, so exported timing matches the preview exactly
+
+### 🎬 Editing (montage)
+- **Transitions between scenes**: cut, fade, slide, wipe — visible in Play all and baked into the export
+- **Per-scene settings popover (⚙ on a thumbnail)**: rename, hold duration, transition, precise voice-over start time, listen-from-here
+- Measured scene durations shown on thumbnails after each playback
+
+### 🎨 Colors & fonts
+- 18 text fonts (10 new handwriting/display Google Fonts: Kalam, Amatic SC, Shadows Into Light, Gloria Hallelujah, Indie Flower, Architects Daughter, Bangers, Pacifico, Bebas Neue, Courgette)
+- 19 text color swatches (pastels included) + quick color dots next to every outline color picker
+- 6 new canvas backgrounds: Midnight, Sunset, Mint, Ocean, Dotted paper, Slate
 
 ### 💾 Portable projects
 - **Export / Import project file** (`.inkstudio.json`) from the Projects modal — scenes, images and voice-over all baked in; move projects between machines or keep backups

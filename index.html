@@ -13,6 +13,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="site.webmanifest">
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&family=Patrick+Hand&family=Permanent+Marker&family=Roboto:wght@400;700&family=Merriweather:wght@400;700&family=Space+Mono&family=Nunito:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Amatic+SC:wght@700&family=Shadows+Into+Light&family=Gloria+Hallelujah&family=Indie+Flower&family=Architects+Daughter&family=Bangers&family=Pacifico&family=Bebas+Neue&family=Courgette&display=swap" rel="stylesheet">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -4001,6 +4002,24 @@ input[type="number"]:focus { border-color: var(--accent); }
           <div class="bg-preset" title="Linen" data-bg-key="linen"
             style="background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.04) 2px,rgba(0,0,0,.04) 4px),#f5ede0"
             onclick="selectBgPreset(this,'gradient','linen')"></div>
+          <div class="bg-preset" title="Midnight" data-bg-key="midnight"
+            style="background:linear-gradient(180deg,#1e293b 0%,#0f172a 60%,#020617 100%)"
+            onclick="selectBgPreset(this,'gradient','midnight')"></div>
+          <div class="bg-preset" title="Sunset" data-bg-key="sunset"
+            style="background:linear-gradient(135deg,#fde68a 0%,#fca5a5 45%,#c084fc 100%)"
+            onclick="selectBgPreset(this,'gradient','sunset')"></div>
+          <div class="bg-preset" title="Mint" data-bg-key="mint"
+            style="background:linear-gradient(90deg,#ecfdf5 0%,#d1fae5 50%,#a7f3d0 100%)"
+            onclick="selectBgPreset(this,'gradient','mint')"></div>
+          <div class="bg-preset" title="Ocean" data-bg-key="ocean"
+            style="background:linear-gradient(180deg,#e0f2fe 0%,#bae6fd 55%,#7dd3fc 100%)"
+            onclick="selectBgPreset(this,'gradient','ocean')"></div>
+          <div class="bg-preset" title="Dotted paper" data-bg-key="dots"
+            style="background:radial-gradient(rgba(0,0,0,0.12) 1px,transparent 1px) 0 0/11px 11px,#fbfbf9"
+            onclick="selectBgPreset(this,'gradient','dots')"></div>
+          <div class="bg-preset" title="Slate" data-bg-key="slate"
+            style="background:radial-gradient(ellipse at 50% 40%,#475569 0%,#334155 70%,#1e293b 100%)"
+            onclick="selectBgPreset(this,'gradient','slate')"></div>
         </div>
       </div>
     </div>
@@ -4076,6 +4095,16 @@ input[type="number"]:focus { border-color: var(--accent); }
           <div class="tp-swatch" style="background:#d97706" data-color="#d97706" onclick="selectTextColor(this)"></div>
           <div class="tp-swatch" style="background:#7c3aed" data-color="#7c3aed" onclick="selectTextColor(this)"></div>
           <div class="tp-swatch" style="background:#0891b2" data-color="#0891b2" onclick="selectTextColor(this)"></div>
+          <div class="tp-swatch" style="background:#db2777" data-color="#db2777" onclick="selectTextColor(this)"></div>
+          <div class="tp-swatch" style="background:#65a30d" data-color="#65a30d" onclick="selectTextColor(this)"></div>
+          <div class="tp-swatch" style="background:#f59e0b" data-color="#f59e0b" onclick="selectTextColor(this)"></div>
+          <div class="tp-swatch" style="background:#78350f" data-color="#78350f" onclick="selectTextColor(this)"></div>
+          <div class="tp-swatch" style="background:#64748b" data-color="#64748b" onclick="selectTextColor(this)"></div>
+          <div class="tp-swatch" style="background:#fca5a5" data-color="#fca5a5" onclick="selectTextColor(this)"></div>
+          <div class="tp-swatch" style="background:#93c5fd" data-color="#93c5fd" onclick="selectTextColor(this)"></div>
+          <div class="tp-swatch" style="background:#86efac" data-color="#86efac" onclick="selectTextColor(this)"></div>
+          <div class="tp-swatch" style="background:#fde047" data-color="#fde047" onclick="selectTextColor(this)"></div>
+          <div class="tp-swatch" style="background:#d8b4fe" data-color="#d8b4fe" onclick="selectTextColor(this)"></div>
           <label class="tp-swatch tp-swatch-custom" title="Custom color" style="cursor:pointer;overflow:hidden;">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
             <input type="color" id="tp-custom-color" style="position:absolute;opacity:0;width:0;height:0;" oninput="onTextCustomColor(this.value)">
@@ -5772,6 +5801,39 @@ const BG_GRADIENTS = {
     ctx.strokeStyle='rgba(0,0,0,0.04)'; ctx.lineWidth=1;
     for(let y=0;y<state.canvasH;y+=4){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(state.canvasW,y);ctx.stroke();}
     for(let x=0;x<state.canvasW;x+=4){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,state.canvasH);ctx.stroke();}
+  },
+  // ── InkStudio additions ──
+  midnight: ctx => {
+    const g=ctx.createLinearGradient(0,0,0,state.canvasH);
+    g.addColorStop(0,'#1e293b');g.addColorStop(.6,'#0f172a');g.addColorStop(1,'#020617');
+    ctx.fillStyle=g;ctx.fillRect(0,0,state.canvasW,state.canvasH);
+  },
+  sunset: ctx => {
+    const g=ctx.createLinearGradient(0,0,state.canvasW,state.canvasH);
+    g.addColorStop(0,'#fde68a');g.addColorStop(.45,'#fca5a5');g.addColorStop(1,'#c084fc');
+    ctx.fillStyle=g;ctx.fillRect(0,0,state.canvasW,state.canvasH);
+  },
+  mint: ctx => {
+    const g=ctx.createLinearGradient(0,0,state.canvasW,0);
+    g.addColorStop(0,'#ecfdf5');g.addColorStop(.5,'#d1fae5');g.addColorStop(1,'#a7f3d0');
+    ctx.fillStyle=g;ctx.fillRect(0,0,state.canvasW,state.canvasH);
+  },
+  ocean: ctx => {
+    const g=ctx.createLinearGradient(0,0,0,state.canvasH);
+    g.addColorStop(0,'#e0f2fe');g.addColorStop(.55,'#bae6fd');g.addColorStop(1,'#7dd3fc');
+    ctx.fillStyle=g;ctx.fillRect(0,0,state.canvasW,state.canvasH);
+  },
+  dots: ctx => {
+    ctx.fillStyle='#fbfbf9'; ctx.fillRect(0,0,state.canvasW,state.canvasH);
+    ctx.fillStyle='rgba(0,0,0,0.10)';
+    for(let y=14;y<state.canvasH;y+=22) for(let x=14;x<state.canvasW;x+=22){
+      ctx.beginPath();ctx.arc(x,y,1.1,0,7);ctx.fill();
+    }
+  },
+  slate: ctx => {
+    const g=ctx.createRadialGradient(state.canvasW*.5,state.canvasH*.4,0,state.canvasW*.5,state.canvasH*.5,state.canvasW*.75);
+    g.addColorStop(0,'#475569');g.addColorStop(.7,'#334155');g.addColorStop(1,'#1e293b');
+    ctx.fillStyle=g;ctx.fillRect(0,0,state.canvasW,state.canvasH);
   },
 };
 
@@ -8058,6 +8120,17 @@ const TEXT_FONTS = [
   { family: 'Roboto',           label: 'Roboto',          desc: 'Modern sans',    preview: 'Aa' },
   { family: 'Merriweather',     label: 'Merriweather',    desc: 'Serif heading',  preview: 'Aa' },
   { family: 'Space Mono',       label: 'Space Mono',      desc: 'Monospace',      preview: 'Aa' },
+  // InkStudio additions
+  { family: 'Kalam',            label: 'Kalam',           desc: 'Ink handwriting',preview: 'Aa' },
+  { family: 'Amatic SC',        label: 'Amatic SC',       desc: 'Tall & thin',    preview: 'Aa' },
+  { family: 'Shadows Into Light', label: 'Shadows',       desc: 'Light hand',     preview: 'Aa' },
+  { family: 'Gloria Hallelujah',label: 'Gloria',          desc: 'School notes',   preview: 'Aa' },
+  { family: 'Indie Flower',     label: 'Indie Flower',    desc: 'Rounded hand',   preview: 'Aa' },
+  { family: 'Architects Daughter', label: 'Architects',   desc: 'Sketch notes',   preview: 'Aa' },
+  { family: 'Bangers',          label: 'Bangers',         desc: 'Comic impact',   preview: 'Aa' },
+  { family: 'Pacifico',         label: 'Pacifico',        desc: 'Brush script',   preview: 'Aa' },
+  { family: 'Bebas Neue',       label: 'Bebas Neue',      desc: 'Tall display',   preview: 'Aa' },
+  { family: 'Courgette',        label: 'Courgette',       desc: 'Casual script',  preview: 'Aa' },
 ];
 
 // Text tool state

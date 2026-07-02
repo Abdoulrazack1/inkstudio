@@ -13,6 +13,14 @@
 
   const THUMB_W = 128, THUMB_H = 72;
   const DEFAULT_HOLD = 0.8; // seconds the final frame holds before next scene
+  const SCENE_COLORS = ['#e11d48', '#2563eb', '#16a34a', '#d97706', '#9333ea', '#0891b2', '#db2777', '#65a30d'];
+  const TRANSITIONS = [
+    { key: 'cut',   label: 'Cut (instant)' },
+    { key: 'fade',  label: 'Fade' },
+    { key: 'slide', label: 'Slide' },
+    { key: 'wipe',  label: 'Wipe' },
+  ];
+  const TRANSITION_MS = 450;
 
   let scenes = [];   // [{id, name, audioStart, hold, thumb, live:{layers,groups,selectedLayerId,canvasBg}|null, pending:serialized|null}]
   let cur = 0;
@@ -31,6 +39,8 @@
       name: name || `Scene ${scenes.length + 1}`,
       audioStart: null,   // seconds on the voice-over track; null = right after previous scene
       hold: DEFAULT_HOLD,
+      transition: 'cut',  // transition INTO this scene: cut | fade | slide | wipe
+      _lastDur: null,     // measured drawing duration (s) from the last playback
       thumb: null,
       live: null,
       pending: null,
@@ -128,6 +138,8 @@
         name: s.name,
         audioStart: s.audioStart,
         hold: s.hold,
+        transition: s.transition || 'cut',
+        lastDur: s._lastDur,
         thumb: s.thumb,
         layers: (live.layers || []).map(_serLayer),
         groups: JSON.parse(JSON.stringify(live.groups || [])),
@@ -144,6 +156,8 @@
         const s = _newScene(d.name);
         s.audioStart = (typeof d.audioStart === 'number') ? d.audioStart : null;
         s.hold = (typeof d.hold === 'number') ? d.hold : DEFAULT_HOLD;
+        s.transition = d.transition || 'cut';
+        s._lastDur = (typeof d.lastDur === 'number') ? d.lastDur : null;
         s.thumb = d.thumb || null;
         s.pending = d;
         return s;
@@ -218,7 +232,7 @@
 
     _applyBgToUI(state.canvasBg);
     renderLayerList();
-    redrawLayersOnCanvas();
+    if (!opts.noRedraw) redrawLayersOnCanvas();
     if (state.selectedLayerId && state.layers.some(l => l.id === state.selectedLayerId)) {
       selectLayer(state.selectedLayerId);
     }
@@ -359,6 +373,54 @@
     return Math.max(0, Math.min(1, (gp + f) / groups.length));
   }
 
+  // ── Transitions between scenes (visible in preview AND captured in export) ─
+
+  function _snapshotCanvas() {
+    const c = document.createElement('canvas');
+    c.width = state.canvasW; c.height = state.canvasH;
+    c.getContext('2d').drawImage(canvas, 0, 0);
+    return c;
+  }
+
+  function _bgOnlyCanvas() {
+    const c = document.createElement('canvas');
+    c.width = state.canvasW; c.height = state.canvasH;
+    const tmp = state.bgCanvas; state.bgCanvas = null;
+    fillBg(c.getContext('2d'));
+    state.bgCanvas = tmp;
+    return c;
+  }
+
+  function _playTransition(prevSnap, kind) {
+    return new Promise(resolve => {
+      const next = _bgOnlyCanvas();
+      const W = state.canvasW, H = state.canvasH;
+      const t0 = performance.now();
+      const ease = t => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+      (function tick() {
+        if (!_seq.active) { resolve(); return; }
+        const t = Math.min(1, (performance.now() - t0) / TRANSITION_MS);
+        const e = ease(t);
+        _mainCtx.clearRect(0, 0, W, H);
+        if (kind === 'fade') {
+          _mainCtx.drawImage(prevSnap, 0, 0);
+          _mainCtx.save(); _mainCtx.globalAlpha = e; _mainCtx.drawImage(next, 0, 0); _mainCtx.restore();
+        } else if (kind === 'slide') {
+          _mainCtx.drawImage(prevSnap, -e * W, 0);
+          _mainCtx.drawImage(next, W - e * W, 0);
+        } else if (kind === 'wipe') {
+          _mainCtx.drawImage(prevSnap, 0, 0);
+          _mainCtx.save();
+          _mainCtx.beginPath(); _mainCtx.rect(0, 0, e * W, H); _mainCtx.clip();
+          _mainCtx.drawImage(next, 0, 0);
+          _mainCtx.restore();
+        }
+        if (t >= 1) { resolve(); return; }
+        requestAnimationFrame(tick);
+      })();
+    });
+  }
+
   // Force-finish the current scene: draw its final frame and mark done.
   function _snapSceneToEnd() {
     cancelAnimationFrame(state.animFrame);
@@ -414,13 +476,24 @@
         if (hasAudio && marker != null) await AudioVO.waitUntil(marker, () => !_seq.active);
         if (!_seq.active) return;
 
-        await activate(i, { force: true, fromPlayback: true });
+        const trans = (i > 0 && scenes[i].transition && scenes[i].transition !== 'cut') ? scenes[i].transition : null;
+        const prevSnap = trans ? _snapshotCanvas() : null;
+
+        await activate(i, { force: true, fromPlayback: true, noRedraw: true });
         renderStrip();
         if (!_seq.active) return;
 
-        if (!(state.layers || []).length) { await _sleep(400); continue; }
+        if (trans) await _playTransition(prevSnap, trans);
+        if (!_seq.active) return;
+
+        if (!(state.layers || []).length) {
+          state.bgCanvas = null; fillBg(_mainCtx);
+          await _sleep(400); continue;
+        }
+        const _t0 = performance.now();
         generate();
         await _waitSceneDone(i, hasAudio);
+        scenes[i]._lastDur = Math.round((performance.now() - _t0) / 100) / 10;
         if (!_seq.active) return;
 
         // Hold the completed frame (skip if next scene is gated by an audio marker)
@@ -540,6 +613,36 @@
 .ss-btn:hover { border-color: var(--accent); }
 .ss-btn.ss-add { width: 34px; height: ${THUMB_H + 22}px; justify-content: center; font-size: 16px; }
 .ss-btn.ss-playall.running { border-color: var(--accent2); color: var(--accent2); }
+.ss-thumb-dur {
+  position: absolute; bottom: 20px; left: 3px; background: rgba(0,0,0,0.6); color: #fff;
+  font-size: 8px; font-weight: 600; border-radius: 3px; padding: 1px 4px; pointer-events: none;
+}
+.ss-thumb-trans {
+  position: absolute; top: 3px; left: 26px; background: rgba(0,0,0,0.55); color: #fff;
+  font-size: 9px; border-radius: 3px; padding: 1px 4px; pointer-events: none;
+}
+#ss-settings-pop {
+  position: fixed; z-index: 4000; width: 236px; background: #fff;
+  border: 1px solid rgba(0,0,0,0.18); border-radius: 10px; padding: 12px;
+  box-shadow: 0 10px 32px rgba(0,0,0,0.22); font-size: 11px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+#ss-settings-pop .ssp-title { font-weight: 700; font-size: 12px; }
+#ss-settings-pop label { display: flex; flex-direction: column; gap: 3px; color: #555; font-size: 10px; }
+#ss-settings-pop input, #ss-settings-pop select {
+  border: 1px solid rgba(0,0,0,0.18); border-radius: 6px; padding: 5px 7px; font-size: 11px; width: 100%;
+  box-sizing: border-box; background: #fff; color: #1a1a1a;
+}
+#ss-settings-pop .ssp-row { display: flex; gap: 5px; }
+#ss-settings-pop .ssp-row button {
+  border: 1px solid rgba(0,0,0,0.18); background: #fff; border-radius: 6px; cursor: pointer;
+  padding: 0 9px; font-size: 11px;
+}
+#ss-settings-pop .ssp-actions { display: flex; justify-content: flex-end; }
+#ss-settings-pop .ssp-actions button {
+  border: none; background: var(--accent); color: #fff; border-radius: 6px;
+  padding: 6px 14px; font-size: 11px; font-weight: 600; cursor: pointer;
+}
 `;
     const st = document.createElement('style');
     st.textContent = css;
@@ -577,12 +680,16 @@
       const el = document.createElement('div');
       el.className = 'ss-thumb' + (i === cur ? ' active' : '') + (_seq.active && _seq.idx === i ? ' playing' : '');
       const src = s.thumb || s.pending?.thumb;
+      const col = SCENE_COLORS[i % SCENE_COLORS.length];
       el.innerHTML = `
         ${src ? `<img src="${src}" draggable="false">` : `<div class="ss-thumb-empty">empty</div>`}
-        <div class="ss-thumb-idx">${i + 1}</div>
+        <div class="ss-thumb-idx" style="background:${col}">${i + 1}</div>
         ${s.audioStart != null ? `<div class="ss-thumb-pin" title="Starts at ${s.audioStart.toFixed(1)}s on the voice-over">🎙 ${s.audioStart.toFixed(1)}s</div>` : ''}
+        ${s._lastDur != null ? `<div class="ss-thumb-dur" title="Measured drawing time on last playback">~${s._lastDur.toFixed(1)}s</div>` : ''}
+        ${s.transition && s.transition !== 'cut' ? `<div class="ss-thumb-trans" title="Transition: ${s.transition}">${s.transition === 'fade' ? '◐' : s.transition === 'slide' ? '⇄' : '◨'}</div>` : ''}
         <div class="ss-thumb-name">${s.name}</div>
         <div class="ss-thumb-actions">
+          <button title="Scene settings" data-act="cfg">⚙</button>
           <button title="Move left" data-act="left">◀</button>
           <button title="Move right" data-act="right">▶</button>
           <button title="Duplicate" data-act="dup">⧉</button>
@@ -590,6 +697,7 @@
         </div>`;
       el.addEventListener('click', e => {
         const act = e.target?.dataset?.act;
+        if (act === 'cfg') { _openSceneSettings(i, el); return; }
         if (act === 'left') { moveScene(i, -1); return; }
         if (act === 'right') { moveScene(i, 1); return; }
         if (act === 'dup') { duplicateScene(i); return; }
@@ -621,6 +729,71 @@
     if (window.AudioVO) AudioVO.onScenesChanged();
   }
 
+  // ── Scene settings popover ────────────────────────────────────────────────
+
+  function _closeSceneSettings() {
+    document.getElementById('ss-settings-pop')?.remove();
+  }
+
+  function _openSceneSettings(i, anchorEl) {
+    _closeSceneSettings();
+    const s = scenes[i];
+    const pop = document.createElement('div');
+    pop.id = 'ss-settings-pop';
+    const hasAudio = !!(window.AudioVO && AudioVO.hasAudio());
+    pop.innerHTML = `
+      <div class="ssp-title">Scene ${i + 1} settings</div>
+      <label>Name
+        <input type="text" id="ssp-name" value="${s.name.replace(/"/g, '&quot;')}">
+      </label>
+      <label>Hold after drawing (s)
+        <input type="number" id="ssp-hold" min="0" max="30" step="0.1" value="${s.hold ?? DEFAULT_HOLD}">
+      </label>
+      <label>Transition into this scene
+        <select id="ssp-trans">
+          ${TRANSITIONS.map(t => `<option value="${t.key}" ${(s.transition || 'cut') === t.key ? 'selected' : ''}>${t.label}</option>`).join('')}
+        </select>
+      </label>
+      <label>Voice-over start (s)${hasAudio ? '' : ' — no track loaded'}
+        <div class="ssp-row">
+          <input type="number" id="ssp-marker" min="0" step="0.1"
+            value="${s.audioStart != null ? s.audioStart : ''}" placeholder="auto (after previous)" ${hasAudio ? '' : 'disabled'}>
+          ${hasAudio ? '<button id="ssp-listen" title="Listen from this point">▶</button>' : ''}
+        </div>
+      </label>
+      <div class="ssp-actions">
+        <button id="ssp-ok">Done</button>
+      </div>`;
+    document.body.appendChild(pop);
+
+    const r = anchorEl.getBoundingClientRect();
+    pop.style.left = Math.max(8, Math.min(window.innerWidth - 250, r.left)) + 'px';
+    pop.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+
+    const apply = () => {
+      const name = pop.querySelector('#ssp-name').value.trim();
+      if (name) s.name = name;
+      const hold = parseFloat(pop.querySelector('#ssp-hold').value);
+      if (!isNaN(hold) && hold >= 0) s.hold = hold;
+      s.transition = pop.querySelector('#ssp-trans').value;
+      const mv = pop.querySelector('#ssp-marker').value;
+      s.audioStart = (mv === '' || isNaN(parseFloat(mv))) ? null : Math.max(0, parseFloat(mv));
+      renderStrip();
+      scheduleAutoSave();
+    };
+    pop.querySelector('#ssp-ok').addEventListener('click', () => { apply(); _closeSceneSettings(); });
+    pop.querySelector('#ssp-listen')?.addEventListener('click', () => {
+      const mv = parseFloat(pop.querySelector('#ssp-marker').value);
+      AudioVO.startPlayback({ preview: true, offset: isNaN(mv) ? 0 : mv });
+    });
+    pop.addEventListener('keydown', e => { if (e.key === 'Enter') { apply(); _closeSceneSettings(); } if (e.key === 'Escape') _closeSceneSettings(); });
+
+    setTimeout(() => {
+      const onDoc = e => { if (!pop.contains(e.target)) { apply(); _closeSceneSettings(); document.removeEventListener('mousedown', onDoc); } };
+      document.addEventListener('mousedown', onDoc);
+    }, 0);
+  }
+
   // ── Keyboard: PageUp / PageDown to switch scenes ──────────────────────────
 
   document.addEventListener('keydown', e => {
@@ -649,6 +822,7 @@
     currentIndex: () => cur,
     getScenes: () => scenes,
     isSequenceActive: () => _seq.active,
+    colorFor: i => SCENE_COLORS[i % SCENE_COLORS.length],
   };
 
   // ── Init ──────────────────────────────────────────────────────────────────

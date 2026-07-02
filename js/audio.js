@@ -69,13 +69,14 @@
     if (!buffer) return;
     const c = _ctx();
     if (c.state === 'suspended') { try { await c.resume(); } catch (e) {} }
+    const offset = Math.max(0, Math.min(duration(), opts.offset || 0));
     srcNode = c.createBufferSource();
     srcNode.buffer = buffer;
     srcNode.connect(c.destination);
     if (opts.forExport && exportDest) srcNode.connect(exportDest);
     srcNode.onended = () => { /* time() is clamped to duration */ };
-    srcNode.start();
-    playingSince = c.currentTime;
+    srcNode.start(0, offset);
+    playingSince = c.currentTime - offset; // time() = position on the track
     previewMode = !!opts.preview;
     _startPlayhead();
     _syncPreviewBtn();
@@ -224,6 +225,17 @@
 .vo-pin:hover .vo-pin-label { background: #15803d; }
 .vo-meta { font-size: 10px; color: #666; flex-shrink: 0; max-width: 130px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vo-seg {
+  position: absolute; top: 0; bottom: 0; pointer-events: none; z-index: 1;
+  border-left: 1px solid rgba(0,0,0,0.05);
+}
+.vo-seg.overrun {
+  background-image: repeating-linear-gradient(135deg, rgba(220,38,38,0.22) 0 6px, transparent 6px 12px) !important;
+}
+.vo-seg-label {
+  position: absolute; bottom: 2px; left: 3px; font-size: 8px; font-weight: 700;
+  color: rgba(0,0,0,0.45); pointer-events: none;
+}
 `;
     const st = document.createElement('style');
     st.textContent = css;
@@ -262,16 +274,43 @@
 
   function _renderPins() {
     if (!waveWrap || !buffer) return;
-    waveWrap.querySelectorAll('.vo-pin').forEach(el => el.remove());
+    waveWrap.querySelectorAll('.vo-pin, .vo-seg').forEach(el => el.remove());
     if (!window.SceneManager) return;
     const scenes = SceneManager.getScenes();
+    const dur = duration();
+
+    // ── Colored segment bands: from each pinned scene to the next pin ──
+    scenes.forEach((s, i) => {
+      if (s.audioStart == null) return;
+      let end = dur;
+      for (let j = i + 1; j < scenes.length; j++) {
+        if (scenes[j].audioStart != null) { end = scenes[j].audioStart; break; }
+      }
+      if (end <= s.audioStart) return;
+      const seg = document.createElement('div');
+      const col = SceneManager.colorFor(i);
+      const slot = end - s.audioStart;
+      const overrun = s._lastDur != null && s._lastDur > slot + 0.05;
+      seg.className = 'vo-seg' + (overrun ? ' overrun' : '');
+      seg.style.left = `${(s.audioStart / dur) * 100}%`;
+      seg.style.width = `${(slot / dur) * 100}%`;
+      seg.style.background = col + '2e'; // ~18% alpha
+      seg.innerHTML = `<div class="vo-seg-label" style="color:${col}">${s.name}${overrun ? ` ⚠ ${s._lastDur.toFixed(1)}s > ${slot.toFixed(1)}s` : (s._lastDur != null ? ` · ${s._lastDur.toFixed(1)}s` : '')}</div>`;
+      if (overrun) seg.title = `"${s.name}" takes ~${s._lastDur.toFixed(1)}s to draw but only has ${slot.toFixed(1)}s before the next scene — it will be cut short. Increase its Reveal speed or move the next pin.`;
+      waveWrap.appendChild(seg);
+    });
+
+    // ── Draggable pins ──
     scenes.forEach((s, i) => {
       if (s.audioStart == null) return;
       const pin = document.createElement('div');
       pin.className = 'vo-pin';
-      pin.style.left = `${(s.audioStart / duration()) * 100}%`;
-      pin.title = `${s.name} starts here — drag to move, double-click to unpin`;
-      pin.innerHTML = `<div class="vo-pin-label">${i + 1}</div>`;
+      pin.style.left = `${(s.audioStart / dur) * 100}%`;
+      pin.title = `${s.name} starts here — drag to move, click to listen, double-click to unpin`;
+      const col = SceneManager.colorFor(i);
+      pin.innerHTML = `<div class="vo-pin-label" style="background:${col}">${i + 1}</div>`;
+      pin.querySelector('.vo-pin-label').style.background = col;
+      pin.style.setProperty('--pin-col', col);
 
       pin.addEventListener('dblclick', e => {
         e.stopPropagation();
@@ -280,21 +319,78 @@
       });
       pin.addEventListener('mousedown', e => {
         e.preventDefault(); e.stopPropagation();
+        let moved = false;
+        const startX = e.clientX;
         const move = ev => {
+          if (Math.abs(ev.clientX - startX) > 3) moved = true;
+          if (!moved) return;
           s.audioStart = Math.round(_xToTime(ev.clientX) * 10) / 10;
-          pin.style.left = `${(s.audioStart / duration()) * 100}%`;
+          pin.style.left = `${(s.audioStart / dur) * 100}%`;
           pin.querySelector('.vo-pin-label').textContent = `${i + 1} · ${s.audioStart.toFixed(1)}s`;
         };
         const up = () => {
           document.removeEventListener('mousemove', move);
           document.removeEventListener('mouseup', up);
-          _renderPins(); SceneManager.renderStrip(); scheduleAutoSave();
+          if (moved) { _renderPins(); SceneManager.renderStrip(); scheduleAutoSave(); }
+          else startPlayback({ preview: true, offset: s.audioStart }); // simple click = listen from here
         };
         document.addEventListener('mousemove', move);
         document.addEventListener('mouseup', up);
       });
       waveWrap.appendChild(pin);
     });
+  }
+
+  // ── Auto-pins: put scene markers on detected speech pauses ────────────────
+
+  function autoPins() {
+    if (!buffer || !window.SceneManager) return;
+    const scenes = SceneManager.getScenes();
+    const n = scenes.length;
+    const dur = duration();
+    if (n < 2) { showToast('Add more scenes first — auto-sync places one marker per scene'); return; }
+
+    // RMS over 50 ms windows on channel 0
+    const data = buffer.getChannelData(0);
+    const sr = buffer.sampleRate;
+    const win = Math.round(sr * 0.05);
+    const rms = [];
+    for (let o = 0; o + win <= data.length; o += win) {
+      let sum = 0;
+      for (let i = o; i < o + win; i += 4) sum += data[i] * data[i];
+      rms.push(Math.sqrt(sum / (win / 4)));
+    }
+    const peak = Math.max(...rms, 1e-6);
+    const thr = Math.max(0.008, peak * 0.08);
+
+    // Silent runs ≥ 250 ms, away from the very start/end
+    const silences = [];
+    let runStart = null;
+    for (let i = 0; i < rms.length; i++) {
+      if (rms[i] < thr) { if (runStart == null) runStart = i; }
+      else if (runStart != null) {
+        const len = (i - runStart) * 0.05;
+        const center = (runStart + (i - runStart) / 2) * 0.05;
+        if (len >= 0.25 && center > 0.6 && center < dur - 0.6) silences.push({ center, len });
+        runStart = null;
+      }
+    }
+
+    let markers;
+    if (silences.length >= n - 1) {
+      // Longest pauses = most likely idea boundaries
+      markers = silences.sort((a, b) => b.len - a.len).slice(0, n - 1)
+        .map(s => s.center).sort((a, b) => a - b);
+      showToast(`Auto-sync: ${n - 1} scene change${n > 2 ? 's' : ''} placed on speech pauses`);
+    } else {
+      markers = Array.from({ length: n - 1 }, (_, i) => (dur * (i + 1)) / n);
+      showToast('Not enough clear pauses found — scenes spread evenly instead', null, 4000);
+    }
+    scenes[0].audioStart = 0;
+    markers.forEach((t, i) => { scenes[i + 1].audioStart = Math.round(t * 10) / 10; });
+    _renderPins();
+    SceneManager.renderStrip();
+    scheduleAutoSave();
   }
 
   function _startPlayhead() {
@@ -362,6 +458,13 @@
         (isPlaying() && previewMode) ? stopPlayback() : startPlayback({ preview: true });
       });
       rowEl.appendChild(preview);
+
+      const auto = document.createElement('button');
+      auto.className = 'ss-btn';
+      auto.textContent = '✨ Auto-sync';
+      auto.title = 'Detect pauses in the narration and place one scene marker per pause';
+      auto.addEventListener('click', autoPins);
+      rowEl.appendChild(auto);
     }
 
     waveWrap = document.createElement('div');
@@ -372,11 +475,12 @@
       playheadEl = document.createElement('div');
       playheadEl.className = 'vo-playhead';
       waveWrap.appendChild(playheadEl);
-      waveWrap.title = 'Click: pin the current scene to this moment · double-click a pin: unpin';
+      waveWrap.title = 'Click: pin the current scene here · Shift+click: listen from here · click a pin: listen · double-click a pin: unpin';
       waveWrap.addEventListener('click', e => {
         if (e.target.closest('.vo-pin')) return;
         if (!window.SceneManager) return;
         const t = Math.round(_xToTime(e.clientX) * 10) / 10;
+        if (e.shiftKey) { startPlayback({ preview: true, offset: t }); return; }
         const scenes = SceneManager.getScenes();
         const s = scenes[SceneManager.currentIndex()];
         if (!s) return;
@@ -422,7 +526,7 @@
     createExportStream,
     channels, sampleRate, encodeAacInto,
     serialize, onProjectLoaded,
-    importFile,
+    importFile, autoPins,
     onScenesChanged: () => { if (buffer) _renderPins(); },
   };
 

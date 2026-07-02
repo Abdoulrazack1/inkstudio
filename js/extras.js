@@ -141,7 +141,47 @@
     }
   });
 
+  // ── Quick color presets next to the outline color pickers ────────────────
+
+  const QUICK_COLORS = ['#000000', '#ffffff', '#dc2626', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#db2777', '#64748b'];
+
+  function _injectColorDots() {
+    const style = document.createElement('style');
+    style.textContent = `
+.ink-color-dots { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px; }
+.ink-color-dot {
+  width: 14px; height: 14px; border-radius: 50%; cursor: pointer;
+  border: 1px solid rgba(0,0,0,0.25); transition: transform .1s;
+}
+.ink-color-dot:hover { transform: scale(1.25); }
+`;
+    document.head.appendChild(style);
+
+    ['of-outline-color', 'outlineonly-color', 'text-outline-color'].forEach(id => {
+      const input = document.getElementById(id);
+      if (!input) return;
+      const row = document.createElement('div');
+      row.className = 'ink-color-dots';
+      QUICK_COLORS.forEach(c => {
+        const dot = document.createElement('div');
+        dot.className = 'ink-color-dot';
+        dot.style.background = c;
+        dot.title = c;
+        dot.addEventListener('click', () => {
+          if (input.disabled) return;
+          input.value = c;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        row.appendChild(dot);
+      });
+      // Place the dots right below the input's row
+      (input.closest('div') || input.parentElement).insertAdjacentElement('afterend', row);
+    });
+  }
+
   window.InkExtras = { exportProjectFile, importProjectFile };
 
   _injectProjectButtons();
+  _injectColorDots();
 })();
