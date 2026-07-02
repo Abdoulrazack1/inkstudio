@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Inkplainer — Free Whiteboard Animation Maker</title>
-<meta name="description" content="Inkplainer is a free desktop-browser whiteboard animation maker. Turn images and text into hand-drawn explainer videos — no sign-up, no watermark, no cost.">
+<title>InkStudio — Whiteboard Animation Studio</title>
+<meta name="description" content="InkStudio is a personal whiteboard animation studio with multi-scene projects and voice-over sync. Turn images and text into hand-drawn explainer videos — no sign-up, no watermark, no cost.">
 <meta name="keywords" content="free whiteboard animation, explainer video maker, whiteboard video creator, hand drawn animation, free animation tool, online whiteboard animator">
-<meta name="author" content="Inkplainer">
-<meta property="og:site_name" content="Inkplainer">
-<meta name="application-name" content="Inkplainer">
+<meta name="author" content="InkStudio">
+<meta property="og:site_name" content="InkStudio">
+<meta name="application-name" content="InkStudio">
 <meta name="robots" content="index, follow">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="site.webmanifest">
@@ -3178,9 +3178,9 @@ input[type="number"]:focus { border-color: var(--accent); }
 
 <div id="desktop-only-notice">
   <div class="desktop-only-card">
-    <h1>Inkplainer works best on a desktop browser</h1>
+    <h1>InkStudio works best on a desktop browser</h1>
     <p>This is a canvas-based animation editor with side panels, drag controls, video recording, and project storage. Please open it on a laptop or desktop screen for the full app.</p>
-    <p>Please open Inkplainer on a laptop or desktop screen for the full app.</p>
+    <p>Please open InkStudio on a laptop or desktop screen for the full app.</p>
   </div>
 </div>
 
@@ -3194,7 +3194,7 @@ input[type="number"]:focus { border-color: var(--accent); }
         <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
       </svg>
     </div>
-    <span class="topbar-wordmark">Inkplainer</span>
+    <span class="topbar-wordmark">InkStudio</span>
   </div>
   <div class="topbar-divider"></div>
   
@@ -3237,7 +3237,7 @@ input[type="number"]:focus { border-color: var(--accent); }
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Export Video
     </button>
-    <span class="version-pill">v54</span>
+    <span class="version-pill">InkStudio v1</span>
   </div>
 </div>
 
@@ -3914,6 +3914,9 @@ input[type="number"]:focus { border-color: var(--accent); }
     </div>
 
   </div><!-- /bottom-bar -->
+
+  <!-- InkStudio: scene strip + voice-over timeline (populated by js/scenes.js & js/audio.js) -->
+  <div id="scene-strip"></div>
 </div><!-- /main -->
 
 <!-- ════════ RIGHT PANEL ════════ -->
@@ -4273,10 +4276,12 @@ function saveProject(projectId = currentProjectId) {
   if (!db || !projectId) return;
   
   try {
+  // Multi-scene: make sure the live canvas state is captured into the current scene
+  if (window.SceneManager) SceneManager.captureCurrent();
   const transaction = db.transaction(['projects'], 'readwrite');
   const objectStore = transaction.objectStore('projects');
   const request = objectStore.get(projectId);
-  
+
   request.onsuccess = () => {
     const project = request.result;
     if (project) {
@@ -4339,7 +4344,12 @@ function saveProject(projectId = currentProjectId) {
         outlineDetect: state.outlineDetect,
         outlineAlgorithm: state.outlineAlgorithm,
         outlineStrokeStyle: state.outlineStrokeStyle,
-        colorStyle: state.colorStyle
+        colorStyle: state.colorStyle,
+
+        // InkStudio: multi-scene + voice-over payloads
+        scenes: window.SceneManager ? SceneManager.serialize() : null,
+        sceneIndex: window.SceneManager ? SceneManager.currentIndex() : 0,
+        voiceover: window.AudioVO ? AudioVO.serialize() : null
       };
       
       // Update project data
@@ -4364,6 +4374,8 @@ function saveProject(projectId = currentProjectId) {
 // Helper function to convert image to data URL
 function getImageDataURL(img) {
   if (!img) return null;
+  // Fast path: image already backed by a data URL (project load / file upload)
+  if (img.src && img.src.startsWith('data:')) return img.src;
   const canvas = document.createElement('canvas');
   canvas.width = img.width;
   canvas.height = img.height;
@@ -4459,8 +4471,9 @@ function loadProject(projectId) {
       if (savedState.layers && savedState.layers.length > 0) {
         // CRITICAL: Set the layer ID counter BEFORE loading to avoid conflicts when adding new layers
         const maxId = Math.max(...savedState.layers.map(l => l.id));
-        if (maxId >= window._layerIdCounter) {
-          window._layerIdCounter = maxId;
+        // Bug fix: the real counter is the lexical `_layerIdCounter`, not window.*
+        if (maxId >= _layerIdCounter) {
+          _layerIdCounter = maxId;
         }
         
         let loadedCount = 0;
@@ -4627,6 +4640,10 @@ function loadProject(projectId) {
 
       // Clear undo/redo history — no cross-project history
       clearUndoHistory();
+
+      // InkStudio: restore scenes + voice-over (legacy projects → single scene)
+      if (window.SceneManager) SceneManager.onProjectLoaded(savedState);
+      if (window.AudioVO) AudioVO.onProjectLoaded(savedState);
     }
   };
   } catch (err) {
@@ -5032,9 +5049,9 @@ function _applySnapshot(snap, label) {
     return;
   }
 
-  // Track max id to avoid counter conflicts
+  // Track max id to avoid counter conflicts (lexical counter, not window.*)
   const maxId = Math.max(...snap.layers.map(l => l.id));
-  if (maxId >= (window._layerIdCounter || 0)) window._layerIdCounter = maxId;
+  if (maxId >= _layerIdCounter) _layerIdCounter = maxId;
 
   let loaded = 0;
   const total = snap.layers.length;
@@ -9081,6 +9098,7 @@ async function startRecording() {
 
   } catch (err) {
     console.error('Export failed:', err);
+    if (window.ExportDriver) ExportDriver.stop();
     progressText.textContent = `Export failed: ${err.message || 'Unknown error'}`;
     document.getElementById('export-banner-controls').style.display = 'block';
     document.getElementById('export-progress-container').classList.remove('active');
@@ -9122,7 +9140,14 @@ function recordWebM(progressText, progressBar) {
       state.chunks = [];
       
       const stream = rec.captureStream(30);
-      const mr = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: bitrate });
+
+      // InkStudio: mix the voice-over into the recorded stream
+      if (window.AudioVO && AudioVO.hasAudio()) {
+        const voStream = AudioVO.createExportStream();
+        if (voStream) voStream.getAudioTracks().forEach(t => stream.addTrack(t));
+      }
+
+      const mr = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: bitrate, audioBitsPerSecond: 128000 });
       
       mr.ondataavailable = e => {
         if (e.data && e.data.size > 0) state.chunks.push(e.data);
@@ -9137,7 +9162,8 @@ function recordWebM(progressText, progressBar) {
         a.download = `whiteboard-${timestamp}.webm`;
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
-        
+
+        if (window.ExportDriver) ExportDriver.stop();
         resolve();
       };
       
@@ -9156,9 +9182,9 @@ function recordWebM(progressText, progressBar) {
       
       progressText.textContent = 'Recording animation...';
       progressBar.style.width = '0%';
-      
-      // Restart animation from beginning
-      restartAnim();
+
+      // Restart animation from beginning (ExportDriver = multi-scene + voice-over aware)
+      if (window.ExportDriver) ExportDriver.start(); else restartAnim();
       
       // Auto-stop when animation completes
       const checkComplete = setInterval(() => {
@@ -9185,6 +9211,7 @@ function recordWebM(progressText, progressBar) {
       
     } catch(err) {
       state.recording = false;
+      if (window.ExportDriver) ExportDriver.stop();
       reject(err);
     }
   });
@@ -9215,10 +9242,14 @@ function recordMP4(progressText, progressBar) {
       const W = state.canvasW % 2 === 0 ? state.canvasW : state.canvasW + 1;
       const H = state.canvasH % 2 === 0 ? state.canvasH : state.canvasH + 1;
 
+      // InkStudio: voice-over → AAC audio track in the MP4 (needs AudioEncoder support)
+      const vo = (window.AudioVO && AudioVO.hasAudio() && typeof AudioEncoder !== 'undefined') ? AudioVO : null;
+
       const target = new ArrayBufferTarget();
       const muxer  = new Muxer({
         target,
         video: { codec: 'avc', width: W, height: H },
+        ...(vo ? { audio: { codec: 'aac', numberOfChannels: vo.channels(), sampleRate: vo.sampleRate() } } : {}),
         fastStart: 'in-memory',
       });
 
@@ -9278,13 +9309,22 @@ function recordMP4(progressText, progressBar) {
       progressText.textContent = 'Encoding MP4…';
       progressBar.style.width  = '0%';
 
-      restartAnim();
+      if (window.ExportDriver) ExportDriver.start(); else restartAnim();
+
+      // InkStudio: pace capture to wall-clock 30fps so the exported video runs in
+      // real time — required for the voice-over to stay in sync (and matches preview).
+      const _startWall = performance.now();
 
       function captureFrame() {
         if (!state.recording || encodingDone) return;
 
         // Back-pressure: skip frame if encoder queue is backing up
         if (videoEncoder.encodeQueueSize > 12) {
+          rafId = requestAnimationFrame(captureFrame);
+          return;
+        }
+
+        if (performance.now() - _startWall < frameCount * (1000 / FPS)) {
           rafId = requestAnimationFrame(captureFrame);
           return;
         }
@@ -9324,8 +9364,17 @@ function recordMP4(progressText, progressBar) {
           setTimeout(async () => {
             try {
               await videoEncoder.flush();
+
+              // InkStudio: encode the voice-over as AAC, trimmed to video duration
+              if (vo) {
+                progressText.textContent = 'Encoding audio…';
+                try { await vo.encodeAacInto(muxer, frameCount / FPS); }
+                catch (audioErr) { console.warn('Voice-over encode failed — exporting video only:', audioErr); }
+              }
+
               muxer.finalize();
               videoEncoder.close();
+              if (window.ExportDriver) ExportDriver.stop();
 
               progressBar.style.width = '100%';
 
@@ -9347,12 +9396,15 @@ function recordMP4(progressText, progressBar) {
 
     } catch (err) {
       state.recording = false;
+      if (window.ExportDriver) ExportDriver.stop();
       reject(err);
     }
   });
 }
 
 function isExportAnimationComplete() {
+  // InkStudio: multi-scene / voice-over exports are driven by ExportDriver
+  if (window.ExportDriver && ExportDriver.active) return ExportDriver.isComplete();
   if (!state.done) return false;
   const groups = state._animGroups;
   if (!groups || !groups.length) return !!state.done;
@@ -9361,6 +9413,7 @@ function isExportAnimationComplete() {
 }
 
 function getExportAnimationProgress() {
+  if (window.ExportDriver && ExportDriver.active) return ExportDriver.progress();
   const groups = state._animGroups;
   if (!groups || !groups.length) return state.done ? 1 : 0;
   if (isExportAnimationComplete()) return 1;
@@ -10525,7 +10578,7 @@ if (_layerListEl) {
           <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
         </svg>
       </div>
-      <div class="welcome-title">Welcome to Inkplainer</div>
+      <div class="welcome-title">Welcome to InkStudio</div>
       <div class="welcome-subtitle">The free whiteboard animation maker — no sign-up, no watermark, no cost. Turn images and text into hand-drawn explainer videos in minutes.</div>
     </div>
 
@@ -10770,5 +10823,9 @@ function obEnd() {
   }
 })();
 </script>
+<!-- InkStudio modules -->
+<script src="js/scenes.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/extras.js"></script>
 </body>
 </html>
