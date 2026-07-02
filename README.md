@@ -58,7 +58,17 @@ All features are local and free — no accounts, no paywall, no watermark, no tr
 
 ---
 
-## 🚀 Run it
+## 🖥 Desktop app (Windows)
+
+```bash
+npm install
+npm start          # run in dev
+npm run dist       # build dist/InkStudio Setup <version>.exe (installer + desktop shortcut)
+```
+
+The Electron shell serves the app from an internal `127.0.0.1` server, so WebCodecs / MP4 export work exactly like on localhost — and `js/vendor/mp4-muxer.mjs` is bundled, so MP4 export works fully offline. Projects are stored in the app's own profile (separate from your browser).
+
+## 🚀 Run it in a browser
 
 ```bash
 git clone https://github.com/Abdoulrazack1/inkstudio.git
@@ -79,6 +89,7 @@ Open `http://localhost:3000` (or the port shown) in **Chrome or Edge** (best sup
 | `js/scenes.js` | **InkStudio** — multi-scene system + ExportDriver |
 | `js/audio.js` | **InkStudio** — voice-over import, waveform, markers, AAC/stream muxing |
 | `js/extras.js` | **InkStudio** — portable project files, extra shortcuts |
+| `electron/main.js` | **InkStudio** — desktop shell (internal static server + window) |
 
 ## 📜 License & credits
 

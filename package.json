@@ -1,0 +1,42 @@
+{
+  "name": "inkstudio",
+  "version": "1.0.0",
+  "description": "InkStudio — whiteboard animation studio with multi-scene projects and voice-over sync",
+  "main": "electron/main.js",
+  "author": "Abdoulrazack",
+  "license": "Apache-2.0",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.abdoulrazack.inkstudio",
+    "productName": "InkStudio",
+    "directories": { "output": "dist" },
+    "files": [
+      "electron/**",
+      "index.html",
+      "animations.js",
+      "js/**",
+      "images/**",
+      "pages/**",
+      "favicon.svg",
+      "site.webmanifest"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "runAfterFinish": false
+    }
+  }
+}

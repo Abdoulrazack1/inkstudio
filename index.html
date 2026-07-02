@@ -9296,15 +9296,21 @@ function recordWebM(progressText, progressBar) {
 function recordMP4(progressText, progressBar) {
   return new Promise(async (resolve, reject) => {
     try {
-      // Dynamically import mp4-muxer as an ES module — avoids the UMD global name issue
+      // Dynamically import mp4-muxer as an ES module — vendored copy first
+      // (works offline, e.g. in the desktop app), CDN as fallback.
       let Muxer, ArrayBufferTarget;
       try {
-        const mod = await import('https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.mjs');
+        let mod;
+        try {
+          mod = await import('./js/vendor/mp4-muxer.mjs');
+        } catch (localErr) {
+          mod = await import('https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.mjs');
+        }
         Muxer             = mod.Muxer             || mod.default?.Muxer;
         ArrayBufferTarget = mod.ArrayBufferTarget || mod.default?.ArrayBufferTarget;
         if (!Muxer) throw new Error('Muxer not found in module exports');
       } catch (importErr) {
-        throw new Error('Could not load mp4-muxer v5.2.2. Check your internet connection. (' + importErr.message + ')');
+        throw new Error('Could not load mp4-muxer v5.2.2. (' + importErr.message + ')');
       }
 
       const qualityMap = { high: 8000000, medium: 4000000, low: 2000000 };
