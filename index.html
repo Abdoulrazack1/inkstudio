@@ -4359,6 +4359,7 @@ function saveProject(projectId = currentProjectId) {
           // Text layer properties
           kind: layer.kind,
           textProps: layer.textProps,
+          gifSrc: layer.gifSrc || null,
         })) : [],
         
         selectedLayerId: state.selectedLayerId,
@@ -4546,8 +4547,9 @@ function loadProject(projectId) {
                 // Text layer properties
                 kind: layerData.kind || null,
                 textProps: layerData.textProps || null,
+                gifSrc: layerData.gifSrc || null,
               };
-              
+
               state.layers.push(layer);
               loadedCount++;
               
@@ -4985,6 +4987,7 @@ function _serializeState() {
       textAnimDir: layer.textAnimDir,
       textDrawStyle: layer.textDrawStyle,
       zigzag: layer.zigzag,
+      gifSrc: layer.gifSrc || null,
     })),
   };
 }
@@ -5125,6 +5128,7 @@ function _applySnapshot(snap, label) {
           textAnimDir: ld.textAnimDir,
           textDrawStyle: ld.textDrawStyle,
           zigzag: ld.zigzag,
+          gifSrc: ld.gifSrc || null,
           _origImg: origImg || undefined,
           _origX: ld.origX, _origY: ld.origY,
           _origW: ld.origW, _origH: ld.origH,
@@ -5915,6 +5919,7 @@ function addLayer(img, name) {
   selectLayer(id);
   redrawLayersOnCanvas();
   scheduleAutoSave();
+  return layer;
 }
 
 function removeLayer(id) {
@@ -6688,8 +6693,10 @@ function redrawLayersOnCanvas() {
     if (layer.w < 100 && layer.h < 100) {
       ctx.imageSmoothingEnabled = false;
     }
-    
-    ctx.drawImage(layer.img, layer.x, layer.y, layer.w, layer.h);
+
+    // Animated GIF layers draw their current frame (GifKit owns the clock)
+    const src = (layer.gif && window.GifKit) ? GifKit.frameFor(layer) : layer.img;
+    ctx.drawImage(src, layer.x, layer.y, layer.w, layer.h);
     ctx.restore();
   });
   
@@ -7909,6 +7916,28 @@ function selectAnim(el) {
     : el.textContent.trim();
   scheduleAutoSave();
 }
+function selectTextDir(el) {
+  pushUndoSnapshot();
+  document.querySelectorAll('#text-dir-grid .anim-opt').forEach(d => d.classList.remove('selected'));
+  el.classList.add('selected');
+  const dir = el.dataset.dir;
+  state.textAnimDir = dir;
+  const layer = getSelectedLayer();
+  if (layer) layer.textAnimDir = dir;
+  scheduleAutoSave();
+}
+function selectTextDrawStyle(el) {
+  pushUndoSnapshot();
+  document.querySelectorAll('#text-style-grid .anim-opt').forEach(d => d.classList.remove('selected'));
+  el.classList.add('selected');
+  const sty = el.dataset.style;
+  state.textDrawStyle = sty;
+  const layer = getSelectedLayer();
+  if (layer) layer.textDrawStyle = sty;
+  const outEl = document.getElementById('text-outline-opts');
+  if (outEl) outEl.style.display = (sty === 'outline' || sty === 'outline-fill') ? 'flex' : 'none';
+  scheduleAutoSave();
+}
 function selectBgPreset(el, type, val) {
   // Skip snapshot when called internally from _applySnapshot restore
   if (!_undoRestoring) pushUndoSnapshot();
@@ -8101,7 +8130,17 @@ function loadImageFile(file) {
   const reader = new FileReader();
   reader.onload = e => {
     const img = new Image();
-    img.onload = () => addLayer(img, file.name.replace(/\.[^.]+$/,''));
+    img.onload = () => {
+      const layer = addLayer(img, file.name.replace(/\.[^.]+$/,''));
+      // Animated GIF: keep the original bytes and let GifKit decode the frames.
+      // The layer draws its first frame during the reveal animation, then loops.
+      if (layer && file.type === 'image/gif' && window.GifKit && GifKit.supported()) {
+        layer.gifSrc = e.target.result;
+        GifKit.hydrate(layer).then(ok => {
+          if (ok) { showToast(`GIF animé — ${layer.gif.frames.length} frames 🎞`); redrawLayersOnCanvas(); }
+        });
+      }
+    };
     img.src = e.target.result;
   };
   reader.readAsDataURL(file);
@@ -9061,6 +9100,10 @@ function drawCustomHand(c, hx, hy, tipX, tipY, style) {
 if (!state.exportQuality) state.exportQuality = 'medium';
 if (!state.exportPNG) state.exportPNG = false;
 
+function _exportBaseName() {
+  const n = document.getElementById('project-name-display')?.textContent || 'inkstudio';
+  return (n.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'inkstudio').toLowerCase();
+}
 function openExportBanner() {
   const banner = document.getElementById('export-banner');
   banner.classList.add('active');
@@ -9232,7 +9275,7 @@ function recordWebM(progressText, progressBar) {
         const a = document.createElement('a');
         const timestamp = new Date().toISOString().slice(0,19).replace(/:/g,'-');
         a.href = url;
-        a.download = `whiteboard-${timestamp}.webm`;
+        a.download = `${_exportBaseName()}-${timestamp}.webm`;
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
 
@@ -9462,7 +9505,7 @@ function recordMP4(progressText, progressBar) {
               const a    = document.createElement('a');
               const ts   = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
               a.href     = url;
-              a.download = `whiteboard-${ts}.mp4`;
+              a.download = `${_exportBaseName()}-${ts}.mp4`;
               a.click();
               setTimeout(() => URL.revokeObjectURL(url), 2000);
               resolve();
@@ -9524,7 +9567,7 @@ function exportPNG() {
       const a = document.createElement('a');
       const timestamp = new Date().toISOString().slice(0,19).replace(/:/g,'-');
       a.href = url;
-      a.download = `whiteboard-${timestamp}.png`;
+      a.download = `${_exportBaseName()}-${timestamp}.png`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       resolve();
@@ -10906,5 +10949,6 @@ function obEnd() {
 <script src="js/scenes.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/extras.js"></script>
+<script src="js/studio.js"></script>
 </body>
 </html>

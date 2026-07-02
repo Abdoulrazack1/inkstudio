@@ -14,6 +14,11 @@
   let fileName = null;
   let dataURL = null;         // persisted copy of the file
 
+  // Background music (separate looping track, mixed under the voice)
+  const music = { buffer: null, dataURL: null, fileName: null, volume: 0.25, duck: true };
+  let musicSrc = null, duckGain = null, volGain = null;
+  let _speechCache = null;    // [[t0,t1],…] speech intervals of the voice track
+
   // Playback
   let srcNode = null;
   let playingSince = null;    // actx.currentTime at start, null = stopped
@@ -45,6 +50,7 @@
       buffer = await _ctx().decodeAudioData(ab);
       dataURL = url;
       fileName = file.name;
+      _speechCache = null;
       _renderRow();
       showToast(`Voice-over loaded — ${_fmt(buffer.duration)}. Click the waveform to pin the current scene.`, null, 4500);
       scheduleAutoSave();
@@ -58,6 +64,7 @@
     if (buffer && !confirm('Remove the voice-over track? Scene markers will be kept.')) return;
     stopPlayback();
     buffer = null; fileName = null; dataURL = null;
+    _speechCache = null;
     _renderRow();
     scheduleAutoSave();
   }
@@ -66,16 +73,19 @@
 
   async function startPlayback(opts = {}) {
     stopPlayback();
-    if (!buffer) return;
+    if (!buffer && !music.buffer) return;
     const c = _ctx();
     if (c.state === 'suspended') { try { await c.resume(); } catch (e) {} }
-    const offset = Math.max(0, Math.min(duration(), opts.offset || 0));
-    srcNode = c.createBufferSource();
-    srcNode.buffer = buffer;
-    srcNode.connect(c.destination);
-    if (opts.forExport && exportDest) srcNode.connect(exportDest);
-    srcNode.onended = () => { /* time() is clamped to duration */ };
-    srcNode.start(0, offset);
+    const offset = Math.max(0, Math.min(buffer ? duration() : Infinity, opts.offset || 0));
+    if (buffer) {
+      srcNode = c.createBufferSource();
+      srcNode.buffer = buffer;
+      srcNode.connect(c.destination);
+      if (opts.forExport && exportDest) srcNode.connect(exportDest);
+      srcNode.onended = () => { /* time() is clamped to duration */ };
+      srcNode.start(0, offset);
+    }
+    _startMusic(offset, !!opts.forExport);
     playingSince = c.currentTime - offset; // time() = position on the track
     previewMode = !!opts.preview;
     _startPlayhead();
@@ -84,13 +94,111 @@
 
   function stopPlayback() {
     if (srcNode) { try { srcNode.stop(); srcNode.disconnect(); } catch (e) {} srcNode = null; }
+    _stopMusic();
     playingSince = null;
     previewMode = false;
     _stopPlayhead();
     _syncPreviewBtn();
   }
 
-  const hasAudio = () => !!buffer;
+  // ── Background music playback ─────────────────────────────────────────────
+
+  const DUCK_LEVEL = 0.3, DUCK_ATTACK = 0.12;
+
+  // Speech intervals of the voice track (for ducking the music underneath)
+  function _speechIntervals() {
+    if (!buffer) return [];
+    if (_speechCache) return _speechCache;
+    const data = buffer.getChannelData(0);
+    const sr = buffer.sampleRate;
+    const win = Math.round(sr * 0.05);
+    const rms = [];
+    for (let o = 0; o + win <= data.length; o += win) {
+      let sum = 0;
+      for (let i = o; i < o + win; i += 4) sum += data[i] * data[i];
+      rms.push(Math.sqrt(sum / (win / 4)));
+    }
+    const peak = Math.max(...rms, 1e-6);
+    const thr = Math.max(0.008, peak * 0.08);
+    const raw = [];
+    let start = null;
+    for (let i = 0; i < rms.length; i++) {
+      if (rms[i] >= thr) { if (start == null) start = i * 0.05; }
+      else if (start != null) { raw.push([start, i * 0.05]); start = null; }
+    }
+    if (start != null) raw.push([start, rms.length * 0.05]);
+    // Merge gaps < 0.5 s so the music doesn't pump between words
+    const merged = [];
+    raw.forEach(iv => {
+      if (merged.length && iv[0] - merged[merged.length - 1][1] < 0.5) merged[merged.length - 1][1] = iv[1];
+      else merged.push([...iv]);
+    });
+    _speechCache = merged.filter(([a, b]) => b - a > 0.15);
+    return _speechCache;
+  }
+
+  function _scheduleDucking(gainParam, ctxTimeAt0, offset) {
+    _speechIntervals().forEach(([t0, t1]) => {
+      const s = t0 - offset, e = t1 - offset;
+      if (e <= 0) return;
+      gainParam.setTargetAtTime(DUCK_LEVEL, ctxTimeAt0 + Math.max(0, s), DUCK_ATTACK);
+      gainParam.setTargetAtTime(1, ctxTimeAt0 + Math.max(0, e), DUCK_ATTACK);
+    });
+  }
+
+  function _startMusic(offset, forExport) {
+    if (!music.buffer) return;
+    const c = _ctx();
+    musicSrc = c.createBufferSource();
+    musicSrc.buffer = music.buffer;
+    musicSrc.loop = true;
+    duckGain = c.createGain();
+    volGain = c.createGain();
+    duckGain.gain.value = 1;
+    volGain.gain.value = music.volume;
+    musicSrc.connect(duckGain);
+    duckGain.connect(volGain);
+    volGain.connect(c.destination);
+    if (forExport && exportDest) volGain.connect(exportDest);
+    if (music.duck && buffer) _scheduleDucking(duckGain.gain, c.currentTime, offset);
+    musicSrc.start(0, offset % music.buffer.duration);
+  }
+
+  function _stopMusic() {
+    if (musicSrc) { try { musicSrc.stop(); musicSrc.disconnect(); } catch (e) {} musicSrc = null; }
+    duckGain = null; volGain = null;
+  }
+
+  async function importMusicFile(file) {
+    try {
+      const url = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = () => rej(r.error);
+        r.readAsDataURL(file);
+      });
+      const ab = await file.arrayBuffer();
+      music.buffer = await _ctx().decodeAudioData(ab);
+      music.dataURL = url;
+      music.fileName = file.name;
+      _renderMusicRow();
+      showToast(`Musique chargée — ${_fmt(music.buffer.duration)}, en boucle sous la voix 🎵`, null, 4000);
+      scheduleAutoSave();
+    } catch (err) {
+      console.error('Music import failed:', err);
+      showToast('⚠️ Could not read that audio file', null, 3500);
+    }
+  }
+
+  function clearMusic() {
+    if (music.buffer && !confirm('Retirer la musique de fond ?')) return;
+    _stopMusic();
+    music.buffer = null; music.dataURL = null; music.fileName = null;
+    _renderMusicRow();
+    scheduleAutoSave();
+  }
+
+  const hasAudio = () => !!(buffer || music.buffer);
   const duration = () => buffer ? buffer.duration : 0;
   const isPlaying = () => playingSince != null;
 
@@ -116,20 +224,47 @@
   // ── WebM export stream ────────────────────────────────────────────────────
 
   function createExportStream() {
-    if (!buffer) return null;
+    if (!buffer && !music.buffer) return null;
     exportDest = _ctx().createMediaStreamDestination();
     return exportDest.stream;
   }
 
   // ── MP4 export: AAC encode into mp4-muxer ─────────────────────────────────
 
-  const channels = () => buffer ? Math.min(2, buffer.numberOfChannels) : 2;
-  const sampleRate = () => buffer ? buffer.sampleRate : 44100;
+  const channels = () => music.buffer ? 2 : (buffer ? Math.min(2, buffer.numberOfChannels) : 2);
+  const sampleRate = () => buffer ? buffer.sampleRate : (music.buffer ? music.buffer.sampleRate : 44100);
+
+  // Offline mix of voice + looping music (with ducking), trimmed to the video
+  async function _mixdownBuffer(durationSec) {
+    const sr = sampleRate();
+    const ch = channels();
+    const len = Math.max(1, Math.ceil(durationSec * sr));
+    const oc = new OfflineAudioContext(ch, len, sr);
+    if (buffer) {
+      const s = oc.createBufferSource();
+      s.buffer = buffer;
+      s.connect(oc.destination);
+      s.start(0);
+    }
+    if (music.buffer) {
+      const s = oc.createBufferSource();
+      s.buffer = music.buffer;
+      s.loop = true;
+      const dg = oc.createGain(), vg = oc.createGain();
+      dg.gain.value = 1;
+      vg.gain.value = music.volume;
+      if (music.duck && buffer) _scheduleDucking(dg.gain, 0, 0);
+      s.connect(dg); dg.connect(vg); vg.connect(oc.destination);
+      s.start(0);
+    }
+    return oc.startRendering();
+  }
 
   async function encodeAacInto(muxer, durationSec) {
-    if (!buffer) return;
-    const sr = buffer.sampleRate;
-    const ch = channels();
+    if (!buffer && !music.buffer) return;
+    const mixed = await _mixdownBuffer(durationSec);
+    const sr = mixed.sampleRate;
+    const ch = mixed.numberOfChannels;
     const cfg = { codec: 'mp4a.40.2', sampleRate: sr, numberOfChannels: ch, bitrate: 128000 };
 
     const support = await AudioEncoder.isConfigSupported(cfg);
@@ -142,13 +277,13 @@
     });
     enc.configure(cfg);
 
-    const totalFrames = Math.min(buffer.length, Math.ceil(durationSec * sr));
+    const totalFrames = mixed.length;
     const CHUNK = 16384;
     for (let off = 0; off < totalFrames; off += CHUNK) {
       const n = Math.min(CHUNK, totalFrames - off);
       const planar = new Float32Array(n * ch);
       for (let c = 0; c < ch; c++) {
-        const src = buffer.getChannelData(c).subarray(off, off + n);
+        const src = mixed.getChannelData(c).subarray(off, off + n);
         planar.set(src, c * n);
       }
       enc.encode(new AudioData({
@@ -171,13 +306,19 @@
   // ── Persistence ───────────────────────────────────────────────────────────
 
   function serialize() {
-    if (!dataURL) return null;
-    return { fileName, dataURL };
+    if (!dataURL && !music.dataURL) return null;
+    return {
+      fileName, dataURL,
+      music: music.dataURL
+        ? { fileName: music.fileName, dataURL: music.dataURL, volume: music.volume, duck: music.duck }
+        : null,
+    };
   }
 
   async function onProjectLoaded(savedState) {
     stopPlayback();
     const vo = savedState && savedState.voiceover;
+    _speechCache = null;
     if (vo && vo.dataURL) {
       try {
         const ab = await (await fetch(vo.dataURL)).arrayBuffer();
@@ -191,7 +332,25 @@
     } else {
       buffer = null; dataURL = null; fileName = null;
     }
+    const m = vo && vo.music;
+    if (m && m.dataURL) {
+      try {
+        const ab = await (await fetch(m.dataURL)).arrayBuffer();
+        music.buffer = await _ctx().decodeAudioData(ab);
+        music.dataURL = m.dataURL;
+        music.fileName = m.fileName || 'music';
+        music.volume = (typeof m.volume === 'number') ? m.volume : 0.25;
+        music.duck = m.duck !== false;
+      } catch (err) {
+        console.error('Music restore failed:', err);
+        music.buffer = null; music.dataURL = null; music.fileName = null;
+      }
+    } else {
+      music.buffer = null; music.dataURL = null; music.fileName = null;
+      music.volume = 0.25; music.duck = true;
+    }
     _renderRow();
+    _renderMusicRow();
   }
 
   // ── Waveform + markers UI ─────────────────────────────────────────────────
@@ -515,6 +674,90 @@
     if (typeof fitCanvas === 'function') setTimeout(fitCanvas, 0);
   }
 
+  // ── Background music row ──────────────────────────────────────────────────
+
+  let musicRowEl = null;
+
+  function _renderMusicRow() {
+    const strip = document.getElementById('scene-strip');
+    if (!strip) return;
+    if (!musicRowEl) {
+      musicRowEl = document.createElement('div');
+      musicRowEl.className = 'ss-row';
+      musicRowEl.id = 'music-row';
+      strip.appendChild(musicRowEl);
+    }
+    musicRowEl.innerHTML = '';
+
+    const title = document.createElement('div');
+    title.className = 'ss-title';
+    title.textContent = 'Music';
+    musicRowEl.appendChild(title);
+
+    const importBtn = document.createElement('button');
+    importBtn.className = 'ss-btn';
+    importBtn.innerHTML = '🎵 ' + (music.buffer ? 'Remplacer' : 'Ajouter une musique');
+    importBtn.title = 'Musique de fond en boucle, mixée sous la voix off dans les exports';
+    importBtn.addEventListener('click', () => fileInput.click());
+    musicRowEl.appendChild(importBtn);
+
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'audio/*';
+    fileInput.style.display = 'none';
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files && fileInput.files[0]) importMusicFile(fileInput.files[0]);
+      fileInput.value = '';
+    });
+    musicRowEl.appendChild(fileInput);
+
+    if (music.buffer) {
+      const volWrap = document.createElement('label');
+      volWrap.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:10px;color:#555;flex-shrink:0;';
+      volWrap.title = 'Volume de la musique';
+      volWrap.innerHTML = `🔉 <input type="range" min="0" max="100" step="1" value="${Math.round(music.volume * 100)}" style="width:110px;"> <span style="min-width:30px;font-variant-numeric:tabular-nums;">${Math.round(music.volume * 100)}%</span>`;
+      const slider = volWrap.querySelector('input');
+      const val = volWrap.querySelector('span');
+      slider.addEventListener('input', () => {
+        music.volume = slider.value / 100;
+        val.textContent = `${slider.value}%`;
+        if (volGain) volGain.gain.value = music.volume;
+      });
+      slider.addEventListener('change', scheduleAutoSave);
+      musicRowEl.appendChild(volWrap);
+
+      const duckWrap = document.createElement('label');
+      duckWrap.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:10px;color:#555;flex-shrink:0;cursor:pointer;';
+      duckWrap.title = 'Baisse automatiquement la musique pendant que la voix parle';
+      duckWrap.innerHTML = `<input type="checkbox" ${music.duck ? 'checked' : ''}> Baisser sous la voix`;
+      duckWrap.querySelector('input').addEventListener('change', e => {
+        music.duck = e.target.checked;
+        scheduleAutoSave();
+      });
+      musicRowEl.appendChild(duckWrap);
+
+      const meta = document.createElement('div');
+      meta.className = 'vo-meta';
+      meta.style.flex = '1';
+      meta.textContent = `${music.fileName} · ${_fmt(music.buffer.duration)} · en boucle`;
+      musicRowEl.appendChild(meta);
+
+      const clear = document.createElement('button');
+      clear.className = 'ss-btn';
+      clear.textContent = '✕';
+      clear.title = 'Retirer la musique';
+      clear.addEventListener('click', clearMusic);
+      musicRowEl.appendChild(clear);
+    } else {
+      const hint = document.createElement('div');
+      hint.className = 'vo-meta';
+      hint.style.flex = '1';
+      hint.textContent = 'Pas de musique de fond — ajoute un mp3 lofi/épique pour tes TikToks';
+      musicRowEl.appendChild(hint);
+    }
+    if (typeof fitCanvas === 'function') setTimeout(fitCanvas, 0);
+  }
+
   window.addEventListener('resize', () => { if (buffer) { _drawWave(); _renderPins(); } });
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -527,6 +770,8 @@
     channels, sampleRate, encodeAacInto,
     serialize, onProjectLoaded,
     importFile, autoPins,
+    importMusicFile, clearMusic,
+    hasMusic: () => !!music.buffer,
     onScenesChanged: () => { if (buffer) _renderPins(); },
   };
 
@@ -534,4 +779,5 @@
 
   _injectStyles();
   _renderRow();
+  _renderMusicRow();
 })();

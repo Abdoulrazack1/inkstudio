@@ -81,6 +81,7 @@
       outlineColor: layer.outlineColor, outlineThickness: layer.outlineThickness,
       textAnimDir: layer.textAnimDir, textDrawStyle: layer.textDrawStyle,
       kind: layer.kind || null, textProps: layer.textProps || null,
+      gifSrc: layer.gifSrc || null,
     };
   }
 
@@ -102,6 +103,7 @@
         outlineColor: ld.outlineColor, outlineThickness: ld.outlineThickness,
         textAnimDir: ld.textAnimDir, textDrawStyle: ld.textDrawStyle,
         kind: ld.kind || null, textProps: ld.textProps || null,
+        gifSrc: ld.gifSrc || null,
       };
       if (!ld.imageDataURL) { resolve({ ...base, img: null }); return; }
       const img = new Image();
@@ -397,8 +399,10 @@
       const W = state.canvasW, H = state.canvasH;
       const t0 = performance.now();
       const ease = t => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+      window._gifPause = true; // the transition owns the canvas
+      const _resolve = () => { window._gifPause = false; resolve(); };
       (function tick() {
-        if (!_seq.active) { resolve(); return; }
+        if (!_seq.active) { _resolve(); return; }
         const t = Math.min(1, (performance.now() - t0) / TRANSITION_MS);
         const e = ease(t);
         _mainCtx.clearRect(0, 0, W, H);
@@ -415,7 +419,7 @@
           _mainCtx.drawImage(next, 0, 0);
           _mainCtx.restore();
         }
-        if (t >= 1) { resolve(); return; }
+        if (t >= 1) { _resolve(); return; }
         requestAnimationFrame(tick);
       })();
     });

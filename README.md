@@ -39,8 +39,28 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 - **Export / Import project file** (`.inkstudio.json`) from the Projects modal — scenes, images and voice-over all baked in; move projects between machines or keep backups
 - `Ctrl+S` saves instantly (auto-save still runs every 5s)
 
+### 🔍 Stage zoom & focus mode
+- **Zoom pill** (bottom-right of the canvas): − / % / + / 1:1, plus one-click **🎬 TikTok format** (9:16, 1080×1920, safe-zone on)
+- `Ctrl+wheel` (or trackpad pinch) zooms at the cursor · plain wheel pans · middle-drag or `Alt`+drag pans · `Ctrl` `+` / `−` / `0`
+- **⛶ Focus mode** (`F`): hides the side panels so the stage fills the window — `Esc` to come back
+
+### 🎞 Animated GIFs
+- Import a `.gif` like any image: it loops on the canvas **and in the exported video** (WebM & MP4)
+- Frames decoded natively (ImageDecoder), persisted with the project, flip-safe
+
+### 📱 TikTok toolkit
+- **Safe-zone overlay** (📱): shows the areas TikTok covers with the caption, action rail and username — never put text there
+- **🎵 Background music track**: loops under the whole video, volume slider, and **auto-ducking** (music dips while the voice-over speaks) — mixed into both WebM and MP4 exports
+- **Manga text presets**: 💥 Onomatopée, 📢 Titre, 💬 Dialogue, ✏️ Narration — one click sets font/size/color and arms text placement
+- **😀 Emoji stickers**: pick from a manga-flavored grid (or type any emoji) — lands as a normal layer that gets hand-drawn like the rest
+- Exported files are named after the project (`mon-projet-2026-….mp4`)
+
+### 🧰 Layer tools
+- **⇋ / ⇅ flip** the selected layer (GIF frames flip too) · **⧉ duplicate** (`Ctrl+D`)
+
 ### 🔧 Fixes
 - Fixed a layer-ID collision bug after loading a saved project (upstream `window._layerIdCounter` bug)
+- Fixed the dead **text animation direction** (← → ↑ ↓) and **text draw style** (Reveal / Outline / Outline+Fill) buttons — their handlers were missing upstream
 - Faster saves: images already backed by data URLs are no longer re-encoded
 
 ### 🆓 Everything unlocked
@@ -89,6 +109,7 @@ Open `http://localhost:3000` (or the port shown) in **Chrome or Edge** (best sup
 | `js/scenes.js` | **InkStudio** — multi-scene system + ExportDriver |
 | `js/audio.js` | **InkStudio** — voice-over import, waveform, markers, AAC/stream muxing |
 | `js/extras.js` | **InkStudio** — portable project files, extra shortcuts |
+| `js/studio.js` | **InkStudio** — zoom/pan/focus, GIF engine, safe-zone, stickers, presets |
 | `electron/main.js` | **InkStudio** — desktop shell (internal static server + window) |
 
 ## 📜 License & credits
