@@ -393,11 +393,32 @@
   // 5. EMOJI STICKERS
   // ═════════════════════════════════════════════════════════════════════════
 
-  const STICKERS = [
-    '😂','🤣','😱','😭','🥶','😳','🤯','💀',
-    '🔥','⚡','💥','✨','💢','💯','❗','❓',
-    '❤️','💔','👀','👍','👎','🙏','💪','🫵',
-    '🎌','⚔️','🥷','🐉','🍜','🎴','📚','🏆',
+  const STICKER_GROUPS = [
+    { label: '⚠️ Alertes & panneaux', items: [
+      '⚠️','🚨','⛔','🚫','❌','✅','❗','‼️','⁉️','❓','🛑','📢',
+      '🔞','📵','🆘','🔴','🟢','🟡','💡','🔒','🔓','🎯','🚧','☢️',
+      '☣️','⚡','🔔','📌','🚩','🏁','🔍','👁️',
+    ]},
+    { label: '😂 Réactions', items: [
+      '😂','🤣','😱','😭','🥶','😳','🤯','💀','😈','🤡','😡','🥵',
+      '😏','🥺','😤','🫢','😬','🙄','😴','🤔','🤫','🤢','😍','🤩',
+    ]},
+    { label: '💥 Effets manga', items: [
+      '💥','✨','💢','💫','🌀','💨','🔥','⭐','🌟','☄️','🎆','💦',
+      '❤️','💔','💯','🗯️','💬','💭','🕳️','🌪️',
+    ]},
+    { label: '🎌 Japon & manga', items: [
+      '🎌','⚔️','🗡️','🥷','🐉','👺','👹','🍜','🍙','🍥','⛩️','🗻',
+      '🎴','🀄','📚','🏮','🎋','👘','🦊','🐱',
+    ]},
+    { label: '👍 Mains & gestes', items: [
+      '👍','👎','👀','🙏','💪','🫵','👊','✌️','🤝','👏','🖐️','☝️',
+      '🤞','🤙','✊','🫶',
+    ]},
+    { label: '🏆 Objets & divers', items: [
+      '🏆','🥇','👑','💰','💎','🎁','📱','💻','🎮','🎧','🎤','📷',
+      '🕹️','🧠','🫀','🦴','⏰','📈','📉','🗿',
+    ]},
   ];
 
   function addSticker(ch) {
@@ -435,7 +456,12 @@
     const pop = document.createElement('div');
     pop.id = 'ink-sticker-pop';
     pop.innerHTML = `
-      <div class="sp-grid">${STICKERS.map(s => `<button class="sp-e" data-e="${s}">${s}</button>`).join('')}</div>
+      <div class="sp-scroll">
+        ${STICKER_GROUPS.map(g => `
+          <div class="sp-cat">${g.label}</div>
+          <div class="sp-grid">${g.items.map(s => `<button class="sp-e" data-e="${s}">${s}</button>`).join('')}</div>
+        `).join('')}
+      </div>
       <div class="sp-row">
         <input type="text" id="sp-custom" placeholder="Tape un emoji… (Win + ;)" maxlength="8">
         <button id="sp-add">Ajouter</button>
@@ -993,6 +1019,11 @@ body.ink-focus #bottom-bar { display: none !important; }
   border: 1px solid rgba(0,0,0,0.18); border-radius: 10px; padding: 10px;
   box-shadow: 0 10px 32px rgba(0,0,0,0.22);
   display: flex; flex-direction: column; gap: 8px;
+}
+#ink-sticker-pop .sp-scroll { max-height: 340px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 2px; }
+#ink-sticker-pop .sp-cat {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: #888; margin-top: 4px; position: sticky; top: 0; background: #fff; padding: 2px 0;
 }
 #ink-sticker-pop .sp-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
 #ink-sticker-pop .sp-e {
