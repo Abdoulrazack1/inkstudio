@@ -55,6 +55,11 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 - **😀 Emoji stickers**: pick from a manga-flavored grid (or type any emoji) — lands as a normal layer that gets hand-drawn like the rest
 - Exported files are named after the project (`mon-projet-2026-….mp4`)
 
+### ➜ Hand-drawn shapes
+- **Shapes tool** in the canvas toolbar: arrow, double arrow, curved arrow, circle, frame, underline, speech bubble, manga focus lines, star, heart — all in a wobbly hand-drawn style with live preview thumbnails
+- Pick **color, thickness and angle** before placing — and change them **after** placement too (Forme section on the layer): the shape re-renders with the exact same strokes
+- Shapes are normal layers: they get hand-drawn by the animation, support timing (départ/durée), flip, duplicate, and persist with the project
+
 ### 🧰 Layer tools
 - **⇋ / ⇅ flip** the selected layer (GIF frames flip too) · **⧉ duplicate** (`Ctrl+D`)
 - **⏱ Per-drawing timing** (Timing section on the selected layer): **Départ** = the drawing waits until that second of the scene before starting · **Durée** = exact drawing time — snapped to its finished image if too slow, held on screen if it finishes early. Works in Play, Play all and both exports.

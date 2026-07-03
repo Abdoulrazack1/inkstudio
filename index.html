@@ -4365,6 +4365,7 @@ function saveProject(projectId = currentProjectId) {
           gifSrc: layer.gifSrc || null,
           startAt: layer.startAt ?? null,
           drawFor: layer.drawFor ?? null,
+          shapeProps: layer.shapeProps || null,
         })) : [],
         
         selectedLayerId: state.selectedLayerId,
@@ -4555,6 +4556,7 @@ function loadProject(projectId) {
                 gifSrc: layerData.gifSrc || null,
                 startAt: layerData.startAt ?? null,
                 drawFor: layerData.drawFor ?? null,
+                shapeProps: layerData.shapeProps || null,
               };
 
               state.layers.push(layer);
@@ -4997,6 +4999,7 @@ function _serializeState() {
       gifSrc: layer.gifSrc || null,
       startAt: layer.startAt ?? null,
       drawFor: layer.drawFor ?? null,
+      shapeProps: layer.shapeProps ? { ...layer.shapeProps } : null,
     })),
   };
 }
@@ -5140,6 +5143,7 @@ function _applySnapshot(snap, label) {
           gifSrc: ld.gifSrc || null,
           startAt: ld.startAt ?? null,
           drawFor: ld.drawFor ?? null,
+          shapeProps: ld.shapeProps ? { ...ld.shapeProps } : null,
           _origImg: origImg || undefined,
           _origX: ld.origX, _origY: ld.origY,
           _origW: ld.origW, _origH: ld.origH,
@@ -6466,6 +6470,22 @@ function _buildLayerItem(layer) {
         <option value="">— None —</option>
         ${state.groups.map(g=>`<option value="${g.id}"${layer.groupId===g.id?' selected':''}>${g.name}</option>`).join('')}
       </select>` : ''}
+      ${layer.kind === 'shape' && layer.shapeProps ? `
+      <div class="section-label" style="margin-top:2px">Forme — couleur</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;align-items:center;">
+        ${(window.ShapeKit?.colors || []).map(c => `<div onclick="event.stopPropagation();ShapeKit.restyleShape(${layer.id},{color:'${c}'})" title="${c}"
+          style="width:15px;height:15px;border-radius:50%;background:${c};border:1px solid rgba(0,0,0,.3);cursor:pointer;${layer.shapeProps.color === c ? 'outline:2px solid var(--accent2);outline-offset:1px;' : ''}"></div>`).join('')}
+        <label style="cursor:pointer;position:relative;font-size:12px;" title="Couleur personnalisée">🎨
+          <input type="color" value="${layer.shapeProps.color || '#1a1a1a'}" style="position:absolute;opacity:0;width:0;height:0;"
+            onclick="event.stopPropagation()" oninput="event.stopPropagation();ShapeKit.restyleShape(${layer.id},{color:this.value})">
+        </label>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;font-size:10px;color:var(--muted);margin-bottom:10px;">
+        <div>Épaisseur <input type="number" min="3" max="26" style="width:100%;margin-top:3px" value="${layer.shapeProps.thickness ?? 10}"
+          onclick="event.stopPropagation()" onchange="event.stopPropagation();ShapeKit.restyleShape(${layer.id},{thickness:+this.value})"></div>
+        <div>Angle ° <input type="number" min="-360" max="360" style="width:100%;margin-top:3px" value="${layer.shapeProps.angle ?? 0}"
+          onclick="event.stopPropagation()" onchange="event.stopPropagation();ShapeKit.restyleShape(${layer.id},{angle:+this.value})"></div>
+      </div>` : ''}
       <div class="section-label" style="margin-top:2px" title="Départ : le dessin attend cette seconde (depuis le début de la scène) avant de commencer. Durée : temps exact du dessin — coupé net s'il est trop lent, maintenu s'il finit en avance.">Timing (s)</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;font-size:10px;color:var(--muted);margin-bottom:10px;">
         <div>⏱ Départ <input type="number" min="0" step="0.1" placeholder="auto" style="width:100%;margin-top:3px" value="${layer.startAt ?? ''}"

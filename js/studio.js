@@ -465,6 +465,301 @@
   }
 
   // ═════════════════════════════════════════════════════════════════════════
+  // 5bis. SHAPES — hand-drawn arrows, circles, bubbles… as regular layers.
+  // A shape layer keeps its parameters (shapeProps) so color / thickness /
+  // angle can be changed after placement: the bitmap is simply re-rendered.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  const SHAPE_SIZE = 640;
+
+  const SHAPES = [
+    { type: 'arrow',       label: 'Flèche' },
+    { type: 'arrowDouble', label: 'Double' },
+    { type: 'arrowCurve',  label: 'Courbée' },
+    { type: 'circle',      label: 'Cercle' },
+    { type: 'rect',        label: 'Cadre' },
+    { type: 'underline',   label: 'Souligné' },
+    { type: 'bubble',      label: 'Bulle' },
+    { type: 'burst',       label: 'Focus' },
+    { type: 'star',        label: 'Étoile' },
+    { type: 'heart',       label: 'Cœur' },
+  ];
+
+  const SHAPE_COLORS = ['#1a1a1a', '#dc2626', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#db2777', '#0891b2', '#facc15', '#ffffff'];
+
+  // Deterministic wobble so a recolor keeps the exact same hand-drawn strokes
+  function _rng(seed) {
+    let s = (seed >>> 0) || 1;
+    return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+  }
+
+  // Each shape = a list of polylines in center coordinates (working radius 260)
+  function _shapePaths(type, rnd) {
+    const R = 260;
+    const pts = [];
+    const line = (x1, y1, x2, y2, segs = 10) => {
+      const p = [];
+      for (let i = 0; i <= segs; i++) { const t = i / segs; p.push([x1 + (x2 - x1) * t, y1 + (y2 - y1) * t]); }
+      return p;
+    };
+    const quad = (x1, y1, cx, cy, x2, y2, segs = 26) => {
+      const p = [];
+      for (let i = 0; i <= segs; i++) {
+        const t = i / segs, u = 1 - t;
+        p.push([u * u * x1 + 2 * u * t * cx + t * t * x2, u * u * y1 + 2 * u * t * cy + t * t * y2]);
+      }
+      return p;
+    };
+    switch (type) {
+      case 'arrow':
+        pts.push(line(-R, 0, R - 20, 0, 14));
+        pts.push(line(R, 0, R - 85, -55, 6));
+        pts.push(line(R, 0, R - 85, 55, 6));
+        break;
+      case 'arrowDouble':
+        pts.push(line(-R + 20, 0, R - 20, 0, 14));
+        pts.push(line(R, 0, R - 85, -55, 6));
+        pts.push(line(R, 0, R - 85, 55, 6));
+        pts.push(line(-R, 0, -R + 85, -55, 6));
+        pts.push(line(-R, 0, -R + 85, 55, 6));
+        break;
+      case 'arrowCurve': {
+        const c = quad(-R + 30, 150, -40, -300, R - 50, 40);
+        pts.push(c);
+        const [ex, ey] = c[c.length - 1], [px, py] = c[c.length - 3];
+        const a = Math.atan2(ey - py, ex - px), h = 95;
+        pts.push(line(ex, ey, ex - h * Math.cos(a - 0.5), ey - h * Math.sin(a - 0.5), 6));
+        pts.push(line(ex, ey, ex - h * Math.cos(a + 0.5), ey - h * Math.sin(a + 0.5), 6));
+        break;
+      }
+      case 'circle': {
+        const p = [], n = 40, ph = rnd() * 6.28;
+        for (let i = 0; i <= n; i++) { const a = ph + (i / n) * 6.283; p.push([Math.cos(a) * R, Math.sin(a) * R * 0.72]); }
+        pts.push(p);
+        break;
+      }
+      case 'rect': {
+        const w = R, h = R * 0.62;
+        pts.push(line(-w, -h, w, -h, 12));
+        pts.push(line(w, -h, w, h, 8));
+        pts.push(line(w, h, -w, h, 12));
+        pts.push(line(-w, h, -w, -h, 8));
+        break;
+      }
+      case 'underline': {
+        const p = [], n = 30;
+        for (let i = 0; i <= n; i++) { const t = i / n; p.push([-R + 2 * R * t, Math.sin(t * Math.PI * 2.2) * 20]); }
+        pts.push(p);
+        break;
+      }
+      case 'bubble': {
+        const w = R, top = -R * 0.7, bot = R * 0.28, r = 40;
+        pts.push(line(-w + r, top, w - r, top, 12));
+        pts.push(quad(w - r, top, w, top, w, top + r, 8));
+        pts.push(line(w, top + r, w, bot - r, 8));
+        pts.push(quad(w, bot - r, w, bot, w - r, bot, 8));
+        pts.push(line(w - r, bot, -w * 0.05, bot, 10));
+        pts.push(line(-w * 0.05, bot, -w * 0.25, bot + R * 0.42, 5)); // tail
+        pts.push(line(-w * 0.25, bot + R * 0.42, -w * 0.42, bot, 5));
+        pts.push(line(-w * 0.42, bot, -w + r, bot, 8));
+        pts.push(quad(-w + r, bot, -w, bot, -w, bot - r, 8));
+        pts.push(line(-w, bot - r, -w, top + r, 8));
+        pts.push(quad(-w, top + r, -w, top, -w + r, top, 8));
+        break;
+      }
+      case 'burst': {
+        const n = 16;
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * 6.283 + rnd() * 0.15;
+          const r2 = R * (0.55 + rnd() * 0.12);
+          pts.push(line(Math.cos(a) * R, Math.sin(a) * R * 0.8, Math.cos(a) * r2, Math.sin(a) * r2 * 0.8, 4));
+        }
+        break;
+      }
+      case 'star': {
+        const p = [];
+        for (let i = 0; i <= 10; i++) {
+          const a = -Math.PI / 2 + (i * Math.PI) / 5;
+          const r = i % 2 === 0 ? R : R * 0.45;
+          p.push([Math.cos(a) * r, Math.sin(a) * r]);
+        }
+        pts.push(p);
+        break;
+      }
+      case 'heart': {
+        const p = [], n = 44;
+        for (let i = 0; i <= n; i++) {
+          const t = (i / n) * 6.283;
+          p.push([
+            (16 * Math.pow(Math.sin(t), 3) * R) / 17,
+            (-(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) * R) / 17,
+          ]);
+        }
+        pts.push(p);
+        break;
+      }
+    }
+    return pts;
+  }
+
+  function renderShape(props) {
+    const c = document.createElement('canvas');
+    c.width = SHAPE_SIZE; c.height = SHAPE_SIZE;
+    const g = c.getContext('2d');
+    const rnd = _rng(props.seed || 1);
+    const th = props.thickness ?? 10;
+    g.translate(SHAPE_SIZE / 2, SHAPE_SIZE / 2);
+    g.rotate(((props.angle || 0) * Math.PI) / 180);
+    g.scale(0.88, 0.88);
+    g.strokeStyle = props.color || '#1a1a1a';
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    const j = th * 0.35 + 2; // wobble amplitude
+    _shapePaths(props.type, rnd).forEach(poly => {
+      for (let pass = 0; pass < 2; pass++) {
+        g.globalAlpha = pass ? 0.5 : 1;
+        g.lineWidth = th * (pass ? 0.62 : 1);
+        g.beginPath();
+        poly.forEach(([x, y], i) => {
+          const jx = x + (rnd() - 0.5) * j * 2, jy = y + (rnd() - 0.5) * j * 2;
+          i ? g.lineTo(jx, jy) : g.moveTo(jx, jy);
+        });
+        g.stroke();
+      }
+    });
+    g.globalAlpha = 1;
+    return c;
+  }
+
+  const _shapeSettings = { color: '#dc2626', thickness: 10, angle: 0 };
+
+  function addShape(type) {
+    const props = { type, ...(_shapeSettings), seed: (Math.random() * 1e9) | 0 };
+    const src = renderShape(props);
+    const img = new Image();
+    img.onload = () => {
+      const layer = addLayer(img, `Forme ${SHAPES.find(s => s.type === type)?.label || type}`);
+      if (!layer) return;
+      layer.kind = 'shape';
+      layer.shapeProps = props;
+      layer.hasPngAlpha = true;
+      const side = Math.round(Math.min(state.canvasW, state.canvasH) * 0.42);
+      layer.w = side; layer.h = side;
+      layer.x = Math.round((state.canvasW - side) / 2);
+      layer.y = Math.round((state.canvasH - side) / 2);
+      if (typeof syncLayerResizeFromCurrentSize === 'function') syncLayerResizeFromCurrentSize(layer);
+      renderLayerList();
+      redrawLayersOnCanvas();
+      if (typeof drawSelectionHandles === 'function') drawSelectionHandles();
+      scheduleAutoSave();
+    };
+    img.src = src.toDataURL('image/png');
+  }
+
+  // Change color / thickness / angle of an existing shape layer (same wobble)
+  function restyleShape(id, patch) {
+    const layer = typeof getLayerById === 'function' ? getLayerById(id) : null;
+    if (!layer || layer.kind !== 'shape' || !layer.shapeProps) return;
+    pushUndoSnapshot();
+    Object.assign(layer.shapeProps, patch);
+    const img = new Image();
+    img.onload = () => {
+      layer.img = img;
+      redrawLayersOnCanvas();
+      if (typeof drawSelectionHandles === 'function') drawSelectionHandles();
+      if (window.SceneManager) SceneManager.renderStrip();
+      scheduleAutoSave();
+    };
+    img.src = renderShape(layer.shapeProps).toDataURL('image/png');
+  }
+  window.ShapeKit = { addShape, restyleShape, renderShape, colors: SHAPE_COLORS };
+
+  function _closeShapePop() { document.getElementById('ink-shape-pop')?.remove(); }
+
+  function _openShapePop(anchor) {
+    _closeShapePop();
+    const pop = document.createElement('div');
+    pop.id = 'ink-shape-pop';
+    pop.innerHTML = `
+      <div class="shp-grid"></div>
+      <div class="shp-row shp-colors">
+        ${SHAPE_COLORS.map(c => `<div class="shp-dot${c === _shapeSettings.color ? ' sel' : ''}" data-c="${c}" style="background:${c}"></div>`).join('')}
+        <label class="shp-custom" title="Couleur personnalisée">🎨<input type="color" value="${_shapeSettings.color}"></label>
+      </div>
+      <div class="shp-row">
+        <label>Épaisseur <input type="range" id="shp-th" min="3" max="26" value="${_shapeSettings.thickness}"></label>
+        <label>Angle <input type="range" id="shp-an" min="0" max="359" value="${_shapeSettings.angle}"><span id="shp-an-val">${_shapeSettings.angle}°</span></label>
+      </div>`;
+    document.body.appendChild(pop);
+
+    // Live thumbnails rendered with the current settings
+    const grid = pop.querySelector('.shp-grid');
+    const _thumbs = [];
+    const _refreshThumbs = () => {
+      _thumbs.forEach(({ cnv, type }) => {
+        const t = cnv.getContext('2d');
+        t.clearRect(0, 0, cnv.width, cnv.height);
+        t.drawImage(renderShape({ type, ..._shapeSettings, seed: 7 }), 0, 0, cnv.width, cnv.height);
+      });
+    };
+    SHAPES.forEach(({ type, label }) => {
+      const b = document.createElement('button');
+      b.className = 'shp-item';
+      b.title = label;
+      const cnv = document.createElement('canvas');
+      cnv.width = 52; cnv.height = 52;
+      b.appendChild(cnv);
+      const lb = document.createElement('span');
+      lb.textContent = label;
+      b.appendChild(lb);
+      b.addEventListener('click', () => { addShape(type); _closeShapePop(); });
+      grid.appendChild(b);
+      _thumbs.push({ cnv, type });
+    });
+    _refreshThumbs();
+
+    pop.querySelectorAll('.shp-dot').forEach(d => d.addEventListener('click', () => {
+      _shapeSettings.color = d.dataset.c;
+      pop.querySelectorAll('.shp-dot').forEach(x => x.classList.toggle('sel', x === d));
+      _refreshThumbs();
+    }));
+    pop.querySelector('.shp-custom input').addEventListener('input', e => {
+      _shapeSettings.color = e.target.value;
+      pop.querySelectorAll('.shp-dot').forEach(x => x.classList.remove('sel'));
+      _refreshThumbs();
+    });
+    pop.querySelector('#shp-th').addEventListener('input', e => { _shapeSettings.thickness = +e.target.value; _refreshThumbs(); });
+    pop.querySelector('#shp-an').addEventListener('input', e => {
+      _shapeSettings.angle = +e.target.value;
+      pop.querySelector('#shp-an-val').textContent = `${e.target.value}°`;
+      _refreshThumbs();
+    });
+
+    const r = anchor.getBoundingClientRect();
+    pop.style.left = Math.max(8, Math.min(window.innerWidth - 300, r.left)) + 'px';
+    pop.style.top = (r.bottom + 8) + 'px';
+    setTimeout(() => {
+      const onDoc = e => { if (!pop.contains(e.target) && e.target !== anchor) { _closeShapePop(); document.removeEventListener('mousedown', onDoc); } };
+      document.addEventListener('mousedown', onDoc);
+    }, 0);
+  }
+
+  function _injectShapeButton() {
+    const bar = document.getElementById('tool-toolbar');
+    if (!bar) return;
+    const div = document.createElement('div');
+    div.className = 'tool-divider';
+    bar.appendChild(div);
+    const b = document.createElement('button');
+    b.className = 'tool-btn';
+    b.id = 'btn-shape-tool';
+    b.innerHTML = '➜ Formes';
+    b.title = 'Flèches, cercles, bulles… en style dessiné à la main — couleur/épaisseur/angle modifiables après coup';
+    b.addEventListener('click', () => _openShapePop(b));
+    bar.appendChild(b);
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
   // 6. MANGA TEXT PRESETS
   // ═════════════════════════════════════════════════════════════════════════
 
@@ -574,6 +869,33 @@ body.ink-focus #bottom-bar { display: none !important; }
   padding: 5px 10px; font-size: 11px; font-weight: 600; cursor: pointer;
 }
 
+/* Shape popover */
+#ink-shape-pop {
+  position: fixed; z-index: 4000; width: 296px; background: #fff;
+  border: 1px solid rgba(0,0,0,0.18); border-radius: 10px; padding: 10px;
+  box-shadow: 0 10px 32px rgba(0,0,0,0.22);
+  display: flex; flex-direction: column; gap: 9px;
+}
+#ink-shape-pop .shp-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+#ink-shape-pop .shp-item {
+  border: 1px solid rgba(0,0,0,0.12); background: #fff; border-radius: 8px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 3px 0 4px;
+}
+#ink-shape-pop .shp-item:hover { border-color: var(--accent, #1a1a1a); background: rgba(0,0,0,0.03); }
+#ink-shape-pop .shp-item span { font-size: 8px; color: #666; }
+#ink-shape-pop .shp-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+#ink-shape-pop .shp-row label { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #555; flex: 1; }
+#ink-shape-pop .shp-row input[type="range"] { flex: 1; min-width: 0; }
+#ink-shape-pop #shp-an-val { font-size: 9px; color: #777; min-width: 26px; }
+#ink-shape-pop .shp-dot {
+  width: 17px; height: 17px; border-radius: 50%; cursor: pointer;
+  border: 1px solid rgba(0,0,0,0.25); transition: transform .1s;
+}
+#ink-shape-pop .shp-dot:hover { transform: scale(1.2); }
+#ink-shape-pop .shp-dot.sel { outline: 2px solid var(--accent2, #6c63ff); outline-offset: 1px; }
+#ink-shape-pop .shp-custom { cursor: pointer; font-size: 13px; position: relative; }
+#ink-shape-pop .shp-custom input { position: absolute; opacity: 0; width: 0; height: 0; }
+
 /* Manga text presets */
 #ink-text-presets { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 8px; }
 #ink-text-presets button {
@@ -592,6 +914,7 @@ body.ink-focus #bottom-bar { display: none !important; }
   _buildSafeZone();
   _injectLayerButtons();
   _injectStickerButton();
+  _injectShapeButton();
   _injectTextPresets();
   try { if (localStorage.getItem('ink-safezone') === '1') toggleSafeZone(true); } catch (e) {}
 

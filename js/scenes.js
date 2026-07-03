@@ -83,6 +83,7 @@
       kind: layer.kind || null, textProps: layer.textProps || null,
       gifSrc: layer.gifSrc || null,
       startAt: layer.startAt ?? null, drawFor: layer.drawFor ?? null,
+      shapeProps: layer.shapeProps ? { ...layer.shapeProps } : null,
     };
   }
 
@@ -106,6 +107,7 @@
         kind: ld.kind || null, textProps: ld.textProps || null,
         gifSrc: ld.gifSrc || null,
         startAt: ld.startAt ?? null, drawFor: ld.drawFor ?? null,
+        shapeProps: ld.shapeProps ? { ...ld.shapeProps } : null,
       };
       if (!ld.imageDataURL) { resolve({ ...base, img: null }); return; }
       const img = new Image();
