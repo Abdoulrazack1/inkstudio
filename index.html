@@ -4360,6 +4360,8 @@ function saveProject(projectId = currentProjectId) {
           kind: layer.kind,
           textProps: layer.textProps,
           gifSrc: layer.gifSrc || null,
+          startAt: layer.startAt ?? null,
+          drawFor: layer.drawFor ?? null,
         })) : [],
         
         selectedLayerId: state.selectedLayerId,
@@ -4548,6 +4550,8 @@ function loadProject(projectId) {
                 kind: layerData.kind || null,
                 textProps: layerData.textProps || null,
                 gifSrc: layerData.gifSrc || null,
+                startAt: layerData.startAt ?? null,
+                drawFor: layerData.drawFor ?? null,
               };
 
               state.layers.push(layer);
@@ -4988,6 +4992,8 @@ function _serializeState() {
       textDrawStyle: layer.textDrawStyle,
       zigzag: layer.zigzag,
       gifSrc: layer.gifSrc || null,
+      startAt: layer.startAt ?? null,
+      drawFor: layer.drawFor ?? null,
     })),
   };
 }
@@ -5129,6 +5135,8 @@ function _applySnapshot(snap, label) {
           textDrawStyle: ld.textDrawStyle,
           zigzag: ld.zigzag,
           gifSrc: ld.gifSrc || null,
+          startAt: ld.startAt ?? null,
+          drawFor: ld.drawFor ?? null,
           _origImg: origImg || undefined,
           _origX: ld.origX, _origY: ld.origY,
           _origW: ld.origW, _origH: ld.origH,
@@ -6086,11 +6094,39 @@ function generate() {
   state._animGroups = [...groupMap.values()];
   state._groupPos   = 0;
 
+  // Scene clock for per-layer timing (start at / duration), plus a run token
+  // so pending waits and holds die when the animation is restarted or stopped.
+  state._sceneT0 = performance.now();
+  window._animRun = (window._animRun || 0) + 1;
+
   _runGroupAt(0);
 }
 
-function _runGroupAt(gpos) {
+function _runGroupAt(gpos, _timed) {
   if (!state._animGroups || gpos >= state._animGroups.length) { _allLayersDone(); return; }
+
+  // Per-layer "start at" (seconds from the scene start): idle until the clock
+  // reaches the group's start time. The wait rAF is stored in state.animFrame
+  // so every existing cancel path (reset, stop, scene switch) kills it too.
+  if (!_timed) {
+    const g = state._animGroups[gpos];
+    const startAt = Math.max(0, ...g.map(l => +l.startAt || 0));
+    if (startAt > 0 && state._sceneT0 && performance.now() < state._sceneT0 + startAt * 1000) {
+      const run = window._animRun;
+      state.playing = true;
+      updatePlayIcons();
+      (function waitTick() {
+        if (run !== window._animRun) return;
+        if (performance.now() < state._sceneT0 + startAt * 1000) {
+          state.animFrame = requestAnimationFrame(waitTick);
+          return;
+        }
+        _runGroupAt(gpos, true);
+      })();
+      return;
+    }
+  }
+
   state._groupPos = gpos;
   const group     = state._animGroups[gpos];
 
@@ -6209,6 +6245,7 @@ function _runGroupAt(gpos) {
   document.getElementById('play-pause-btn').disabled = false;
   document.getElementById('done-badge').classList.remove('show');
   setProgress(0);
+  state._groupT0 = performance.now(); // per-layer "duration" clock
   startAnim();
 }
 
@@ -6417,6 +6454,13 @@ function _buildLayerItem(layer) {
         <option value="">— None —</option>
         ${state.groups.map(g=>`<option value="${g.id}"${layer.groupId===g.id?' selected':''}>${g.name}</option>`).join('')}
       </select>` : ''}
+      <div class="section-label" style="margin-top:2px" title="Départ : le dessin attend cette seconde (depuis le début de la scène) avant de commencer. Durée : temps exact du dessin — coupé net s'il est trop lent, maintenu s'il finit en avance.">Timing (s)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;font-size:10px;color:var(--muted);margin-bottom:10px;">
+        <div>⏱ Départ <input type="number" min="0" step="0.1" placeholder="auto" style="width:100%;margin-top:3px" value="${layer.startAt ?? ''}"
+          onclick="event.stopPropagation()" onchange="event.stopPropagation();setLayerStartAt(${layer.id},this.value)"></div>
+        <div>⏳ Durée <input type="number" min="0" step="0.1" placeholder="auto" style="width:100%;margin-top:3px" value="${layer.drawFor ?? ''}"
+          onclick="event.stopPropagation()" onchange="event.stopPropagation();setLayerDrawFor(${layer.id},this.value)"></div>
+      </div>
       <div class="section-label" style="margin-top:2px">Position &amp; Size</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;font-size:10px;color:var(--muted)">
         <div>X <input type="number" style="width:100%;margin-top:3px" value="${Math.round(layer.x)}" onchange="setLayerPos(${layer.id},'x',+this.value)"></div>
@@ -6471,6 +6515,18 @@ function setLayerOrder(id, val) {
   const n = parseInt(val);
   l.animOrder = (val === '' || isNaN(n)) ? null : Math.max(1, n);
   // Don't re-render list to avoid losing input focus
+}
+function setLayerStartAt(id, val) {
+  const l = getLayerById(id); if (!l) return;
+  const n = parseFloat(val);
+  l.startAt = (val === '' || isNaN(n) || n <= 0) ? null : Math.round(n * 10) / 10;
+  scheduleAutoSave();
+}
+function setLayerDrawFor(id, val) {
+  const l = getLayerById(id); if (!l) return;
+  const n = parseFloat(val);
+  l.drawFor = (val === '' || isNaN(n) || n <= 0) ? null : Math.round(n * 10) / 10;
+  scheduleAutoSave();
 }
 function setLayerOpacity(id, val) {
   pushUndoSnapshot();
@@ -8741,6 +8797,7 @@ function animate() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function resetAnim() {
+  window._animRun = (window._animRun || 0) + 1; // kill pending timed waits/holds
   cancelAnimationFrame(state.animFrame);
   // Clean up any active parallel slots
   state._activeSlots  = [];

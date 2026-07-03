@@ -82,6 +82,7 @@
       textAnimDir: layer.textAnimDir, textDrawStyle: layer.textDrawStyle,
       kind: layer.kind || null, textProps: layer.textProps || null,
       gifSrc: layer.gifSrc || null,
+      startAt: layer.startAt ?? null, drawFor: layer.drawFor ?? null,
     };
   }
 
@@ -104,6 +105,7 @@
         textAnimDir: ld.textAnimDir, textDrawStyle: ld.textDrawStyle,
         kind: ld.kind || null, textProps: ld.textProps || null,
         gifSrc: ld.gifSrc || null,
+        startAt: ld.startAt ?? null, drawFor: ld.drawFor ?? null,
       };
       if (!ld.imageDataURL) { resolve({ ...base, img: null }); return; }
       const img = new Image();
@@ -183,6 +185,7 @@
   // ── Activation / switching ────────────────────────────────────────────────
 
   function _stopAnyAnim() {
+    window._animRun = (window._animRun || 0) + 1; // kill pending timed waits/holds
     cancelAnimationFrame(state.animFrame);
     state.playing = false;
     state.done = false;
@@ -427,6 +430,7 @@
 
   // Force-finish the current scene: draw its final frame and mark done.
   function _snapSceneToEnd() {
+    window._animRun = (window._animRun || 0) + 1; // kill pending timed waits/holds
     cancelAnimationFrame(state.animFrame);
     state.playing = false;
     state._activeSlots = [];

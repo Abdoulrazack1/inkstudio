@@ -1845,6 +1845,25 @@ function _tickSlot(slot) {
 function _tickAllSlots() {
   if (!state._activeSlots || !state._activeSlots.length) return;
 
+  // InkStudio timing: per-layer "duration" (seconds). When the group has drawn
+  // longer than its duration, snap the remaining slots to their finished image.
+  const _grpDrawFor = Math.max(0, ...(state._animGroups?.[state._groupPos ?? 0] || []).map(l => +l.drawFor || 0));
+  if (_grpDrawFor > 0 && state._groupT0 && performance.now() - state._groupT0 >= _grpDrawFor * 1000) {
+    state._activeSlots.forEach(slot => {
+      if (slot.done) return;
+      const l = slot.layer;
+      if (state.bgCanvas && l) {
+        const bc = state.bgCanvas.getContext('2d');
+        bc.save();
+        bc.globalAlpha = l.opacity ?? 1;
+        bc.drawImage(l.img, l.x, l.y, l.w, l.h);
+        bc.restore();
+      }
+      slot.done = true;
+    });
+    hctx.clearRect(0, 0, state.canvasW, state.canvasH);
+  }
+
   // Suppress hctx.clearRect so each slot adds its hand without wiping previous ones
   hctx.clearRect(0, 0, state.canvasW, state.canvasH);
   const _origClear = hctx.clearRect.bind(hctx);
@@ -1891,8 +1910,18 @@ function _tickAllSlots() {
     _mainCtx.restore();
 
     const nextGroup = (state._groupPos ?? 0) + 1;
+    // InkStudio timing: a drawing that finished early holds its slot until its
+    // "duration" has fully elapsed, so timings stay exactly what the user set.
+    let _advDelay = 200;
+    if (_grpDrawFor > 0 && state._groupT0) {
+      _advDelay = Math.max(_advDelay, state._groupT0 + _grpDrawFor * 1000 - performance.now());
+    }
+    const _run = window._animRun;
+    const _guarded = fn => () => { if (_run === window._animRun) fn(); };
     if (nextGroup < (state._animGroups || []).length) {
-      setTimeout(() => _runGroupAt(nextGroup), 200);
+      setTimeout(_guarded(() => _runGroupAt(nextGroup)), _advDelay);
+    } else if (_advDelay > 220) {
+      setTimeout(_guarded(_allLayersDone), _advDelay);
     } else {
       _allLayersDone();
     }

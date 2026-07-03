@@ -57,6 +57,7 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 
 ### 🧰 Layer tools
 - **⇋ / ⇅ flip** the selected layer (GIF frames flip too) · **⧉ duplicate** (`Ctrl+D`)
+- **⏱ Per-drawing timing** (Timing section on the selected layer): **Départ** = the drawing waits until that second of the scene before starting · **Durée** = exact drawing time — snapped to its finished image if too slow, held on screen if it finishes early. Works in Play, Play all and both exports.
 
 ### 🔧 Fixes
 - Fixed a layer-ID collision bug after loading a saved project (upstream `window._layerIdCounter` bug)
