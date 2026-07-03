@@ -1816,10 +1816,37 @@ function _slotOut(slot) {
 
 // Dispatch one tick for a single slot
 function _tickSlot(slot) {
-  const speed = slot.layer.speed ?? parseInt(document.getElementById('speed-slider').value);
+  let speed = slot.layer.speed ?? parseInt(document.getElementById('speed-slider').value);
+
+  // InkStudio timing: when the layer has a "duration", drive the speed with a
+  // feedback controller — every ~250ms compare the measured progress rate with
+  // the rate needed to land exactly on the duration, and rescale the speed.
+  const _drawFor = +slot.layer.drawFor || 0;
+  if (_drawFor > 0 && state._groupT0) {
+    const now = performance.now();
+    const actual = slot._prog ?? 0;
+    if (slot._rt == null) { slot._rt = now; slot._rp = actual; slot._mul = slot._mul ?? 1; }
+    if (now - slot._rt >= 250) {
+      const elapsed = (now - state._groupT0) / 1000;
+      const remainT = Math.max(0.05, _drawFor - elapsed);
+      const neededRate = Math.max(0, 1 - actual) / remainT;              // progress/s required
+      const measured = (actual - slot._rp) / ((now - slot._rt) / 1000);  // progress/s achieved
+      let mul = slot._mul;
+      if (measured > 1e-4) {
+        const ideal = mul * (neededRate / measured);
+        mul = mul * 0.4 + ideal * 0.6; // smooth toward the ideal multiplier
+      } else if (1 - actual > 0.001) {
+        mul *= 1.6; // no visible progress — crank up
+      }
+      slot._mul = Math.max(0.02, Math.min(60, mul));
+      slot._rt = now; slot._rp = actual;
+    }
+    speed = Math.max(1, speed * (slot._mul ?? 1));
+  }
+
   // Temporarily push this layer's slider values so tick fns read correct values
   const _push = (id, v) => { const e=document.getElementById(id); if(e) e.value=v; };
-  _push('speed-slider',      slot.layer.speed      ?? 40);
+  _push('speed-slider',      Math.round(speed));
   _push('hand-speed-slider', slot.layer.handSpeed  ?? 6);
   _push('tile-slider',       slot.layer.chunks     ?? 30);
   _push('spec-tile-slider',  slot.layer.specChunks ?? 35);
@@ -1839,18 +1866,25 @@ function _tickSlot(slot) {
                           tickSpecialized(speed); break;
     default:              tickScanner(speed);       break;
   }
+  // The tick just reported this slot's progress via setProgress()
+  slot._prog = state._animProgress;
 }
 
 // Tick ALL active slots, then composite to _mainCtx
 function _tickAllSlots() {
   if (!state._activeSlots || !state._activeSlots.length) return;
 
-  // InkStudio timing: per-layer "duration" (seconds). When the group has drawn
-  // longer than its duration, snap the remaining slots to their finished image.
+  // InkStudio timing: per-layer "duration" (seconds). The adaptive speed in
+  // _tickSlot aims to land exactly on time; this deadline snap is only the
+  // safety net (each slot snaps on ITS OWN duration).
   const _grpDrawFor = Math.max(0, ...(state._animGroups?.[state._groupPos ?? 0] || []).map(l => +l.drawFor || 0));
-  if (_grpDrawFor > 0 && state._groupT0 && performance.now() - state._groupT0 >= _grpDrawFor * 1000) {
+  if (state._groupT0) {
+    const _elapsedMs = performance.now() - state._groupT0;
+    let _snapped = false;
     state._activeSlots.forEach(slot => {
       if (slot.done) return;
+      const df = +slot.layer.drawFor || 0;
+      if (!(df > 0) || _elapsedMs < df * 1000) return;
       const l = slot.layer;
       if (state.bgCanvas && l) {
         const bc = state.bgCanvas.getContext('2d');
@@ -1860,8 +1894,9 @@ function _tickAllSlots() {
         bc.restore();
       }
       slot.done = true;
+      _snapped = true;
     });
-    hctx.clearRect(0, 0, state.canvasW, state.canvasH);
+    if (_snapped) hctx.clearRect(0, 0, state.canvasW, state.canvasH);
   }
 
   // Suppress hctx.clearRect so each slot adds its hand without wiping previous ones
