@@ -98,7 +98,7 @@
   const wrap = document.getElementById('canvas-wrapper');
 
   const view = { z: 1, x: 0, y: 0 };
-  const Z_MIN = 0.4, Z_MAX = 8;
+  const Z_MIN = 1, Z_MAX = 8; // never smaller than fit — zooming out below fit only causes confusion
 
   function _applyView() {
     const noop = view.z === 1 && !view.x && !view.y;
@@ -113,8 +113,11 @@
   }
 
   function _clampPan() {
-    const mx = (wrap.offsetWidth * view.z + area.clientWidth) / 2;
-    const my = (wrap.offsetHeight * view.z + area.clientHeight) / 2;
+    // At fit there is nothing to pan; when zoomed, never let the canvas
+    // wander further than its own overflow (plus a small margin).
+    if (view.z <= 1.001) { view.x = 0; view.y = 0; return; }
+    const mx = Math.max(0, (wrap.offsetWidth * view.z - area.clientWidth) / 2) + 60;
+    const my = Math.max(0, (wrap.offsetHeight * view.z - area.clientHeight) / 2) + 60;
     view.x = Math.max(-mx, Math.min(mx, view.x));
     view.y = Math.max(-my, Math.min(my, view.y));
   }
@@ -157,6 +160,7 @@
     if (e.ctrlKey || e.metaKey) {
       zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY);
     } else {
+      if (view.z <= 1.001) return; // nothing to pan at fit — plain scrolling must not move the canvas
       if (e.shiftKey) view.x -= e.deltaY;
       else { view.x -= e.deltaX; view.y -= e.deltaY; }
       _clampPan();
@@ -525,8 +529,10 @@ body.ink-focus #sidebar,
 body.ink-focus #right-panel,
 body.ink-focus #bottom-bar { display: none !important; }
 
-/* Canvas wrapper gets transformed by the zoom */
+/* Canvas wrapper gets transformed by the zoom; the area clips it so a
+   zoomed canvas can never cover the surrounding panels */
 #canvas-wrapper { will-change: transform; }
+#canvas-area { overflow: hidden; }
 
 /* TikTok safe zone */
 #ink-safezone { position: absolute; inset: 0; z-index: 50; pointer-events: none; display: none; }
