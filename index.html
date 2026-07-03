@@ -4363,6 +4363,7 @@ function saveProject(projectId = currentProjectId) {
           kind: layer.kind,
           textProps: layer.textProps,
           gifSrc: layer.gifSrc || null,
+          gifRot: layer.gifRot || 0,
           startAt: layer.startAt ?? null,
           drawFor: layer.drawFor ?? null,
           shapeProps: layer.shapeProps || null,
@@ -4554,6 +4555,7 @@ function loadProject(projectId) {
                 kind: layerData.kind || null,
                 textProps: layerData.textProps || null,
                 gifSrc: layerData.gifSrc || null,
+                gifRot: layerData.gifRot || 0,
                 startAt: layerData.startAt ?? null,
                 drawFor: layerData.drawFor ?? null,
                 shapeProps: layerData.shapeProps || null,
@@ -4997,6 +4999,7 @@ function _serializeState() {
       textDrawStyle: layer.textDrawStyle,
       zigzag: layer.zigzag,
       gifSrc: layer.gifSrc || null,
+      gifRot: layer.gifRot || 0,
       startAt: layer.startAt ?? null,
       drawFor: layer.drawFor ?? null,
       shapeProps: layer.shapeProps ? { ...layer.shapeProps } : null,
@@ -5141,6 +5144,7 @@ function _applySnapshot(snap, label) {
           textDrawStyle: ld.textDrawStyle,
           zigzag: ld.zigzag,
           gifSrc: ld.gifSrc || null,
+          gifRot: ld.gifRot || 0,
           startAt: ld.startAt ?? null,
           drawFor: ld.drawFor ?? null,
           shapeProps: ld.shapeProps ? { ...ld.shapeProps } : null,
@@ -6480,12 +6484,19 @@ function _buildLayerItem(layer) {
             onclick="event.stopPropagation()" oninput="event.stopPropagation();ShapeKit.restyleShape(${layer.id},{color:this.value})">
         </label>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;font-size:10px;color:var(--muted);margin-bottom:10px;">
-        <div>Épaisseur <input type="number" min="3" max="26" style="width:100%;margin-top:3px" value="${layer.shapeProps.thickness ?? 10}"
-          onclick="event.stopPropagation()" onchange="event.stopPropagation();ShapeKit.restyleShape(${layer.id},{thickness:+this.value})"></div>
-        <div>Angle ° <input type="number" min="-360" max="360" style="width:100%;margin-top:3px" value="${layer.shapeProps.angle ?? 0}"
-          onclick="event.stopPropagation()" onchange="event.stopPropagation();ShapeKit.restyleShape(${layer.id},{angle:+this.value})"></div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:10px;">
+        Épaisseur <input type="number" min="3" max="26" style="width:100%;margin-top:3px" value="${layer.shapeProps.thickness ?? 10}"
+          onclick="event.stopPropagation()" onchange="event.stopPropagation();ShapeKit.restyleShape(${layer.id},{thickness:+this.value})">
       </div>` : ''}
+      <div class="section-label" style="margin-top:2px" title="Rotation cuite dans l'image — toujours recalculée depuis l'original, sans perte. Poignée ⟳ au-dessus de la sélection sur le canvas (Maj = pas de 15°).">Rotation</div>
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:10px;font-size:10px;color:var(--muted);">
+        <button onclick="event.stopPropagation();RotateKit.rotateBy(${layer.id},-90)" title="−90°" style="cursor:pointer;padding:3px 7px;">↺</button>
+        <button onclick="event.stopPropagation();RotateKit.rotateBy(${layer.id},-15)" title="−15°" style="cursor:pointer;padding:3px 6px;">−15</button>
+        <input type="number" id="ls-rot-${layer.id}" min="0" max="359" style="width:52px;text-align:center;" value="${layer.kind === 'shape' ? (layer.shapeProps?.angle ?? 0) : (layer.rotAngle ?? 0)}"
+          onclick="event.stopPropagation()" onchange="event.stopPropagation();pushUndoSnapshot();RotateKit.rotateTo(${layer.id},+this.value)">
+        <button onclick="event.stopPropagation();RotateKit.rotateBy(${layer.id},15)" title="+15°" style="cursor:pointer;padding:3px 6px;">+15</button>
+        <button onclick="event.stopPropagation();RotateKit.rotateBy(${layer.id},90)" title="+90°" style="cursor:pointer;padding:3px 7px;">↻</button>
+      </div>
       <div class="section-label" style="margin-top:2px" title="Départ : le dessin attend cette seconde (depuis le début de la scène) avant de commencer. Durée : temps exact du dessin — coupé net s'il est trop lent, maintenu s'il finit en avance.">Timing (s)</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;font-size:10px;color:var(--muted);margin-bottom:10px;">
         <div>⏱ Départ <input type="number" min="0" step="0.1" placeholder="auto" style="width:100%;margin-top:3px" value="${layer.startAt ?? ''}"
@@ -6819,7 +6830,23 @@ function drawSelectionHandles() {
     sctx.beginPath(); sctx.arc(cx2,cy2,4,0,Math.PI*2); sctx.fill();
     sctx.strokeStyle='#6c63ff'; sctx.lineWidth=1.5; sctx.stroke();
   });
+  // Rotation knob above the top edge (drag to rotate, Shift = 15° steps)
+  const kx = x + w/2, ky = y - 34;
+  sctx.strokeStyle='#6c63ff'; sctx.lineWidth=1.5;
+  sctx.beginPath(); sctx.moveTo(kx, y); sctx.lineTo(kx, ky + 9); sctx.stroke();
+  sctx.fillStyle='#fff';
+  sctx.beginPath(); sctx.arc(kx, ky, 9, 0, Math.PI*2); sctx.fill();
+  sctx.strokeStyle='#6c63ff'; sctx.lineWidth=2; sctx.stroke();
+  sctx.fillStyle='#6c63ff';
+  sctx.font='bold 11px sans-serif'; sctx.textAlign='center'; sctx.textBaseline='middle';
+  sctx.fillText('⟳', kx, ky + 0.5);
   sctx.restore();
+}
+
+// Hit test for the rotation knob (canvas coords)
+function _hitRotateKnob(px, py, layer) {
+  const kx = layer.x + layer.w/2, ky = layer.y - 34;
+  return Math.hypot(px - kx, py - ky) <= 13;
 }
 
 // ── Canvas pointer interaction: move + resize ──
@@ -6884,6 +6911,14 @@ selectCanvas.addEventListener('mousedown', e => {
 
   // Check handle hit first
   if (sel) {
+    if (_hitRotateKnob(x, y, sel) && window.RotateKit) {
+      const cx = sel.x + sel.w/2, cy = sel.y + sel.h/2;
+      _interact = {type:'rotate', cx, cy,
+        startPointerAngle: Math.atan2(y - cy, x - cx),
+        origRot: (sel.kind === 'shape' ? (sel.shapeProps?.angle || 0) : (sel.rotAngle || 0)),
+        orig:{x:sel.x,y:sel.y,w:sel.w,h:sel.h}};
+      return;
+    }
     const handle = hitTestHandle(x,y,sel);
     if (handle) {
       _interact = {type:'resize', handle, startX:x, startY:y,
@@ -6908,12 +6943,22 @@ selectCanvas.addEventListener('mousemove', e => {
   if (!_interact) {
     // Cursor feedback
     if (sel) {
+      if (_hitRotateKnob(x, y, sel)) { selectCanvas.style.cursor = 'grab'; return; }
       const handle = hitTestHandle(x,y,sel);
       selectCanvas.style.cursor = handle ? 'nwse-resize' : (x>=sel.x&&x<=sel.x+sel.w&&y>=sel.y&&y<=sel.y+sel.h ? 'move' : 'default');
     } else { selectCanvas.style.cursor = 'default'; }
     return;
   }
   if (!sel) return;
+  if (_interact.type === 'rotate') {
+    const a = Math.atan2(y - _interact.cy, x - _interact.cx);
+    let deg = _interact.origRot + ((a - _interact.startPointerAngle) * 180) / Math.PI;
+    if (e.shiftKey) deg = Math.round(deg / 15) * 15;
+    RotateKit.rotateTo(sel.id, deg, { light: true, silent: true });
+    const rotInp = document.getElementById(`ls-rot-${sel.id}`);
+    if (rotInp) rotInp.value = Math.round(((deg % 360) + 360) % 360);
+    return;
+  }
   const dx = x - _interact.startX, dy = y - _interact.startY;
   if (_interact.type === 'move') {
     sel.x = _interact.orig.x + dx;
@@ -6960,6 +7005,15 @@ document.addEventListener('mouseup', () => {
   const wasInteract = _interact.type;
   const orig = _interact.orig;
   _interact = null;
+  if (wasInteract === 'rotate') {
+    if (sel && window.RotateKit) {
+      // Finalize: rotate GIF frames, refresh the panel, save
+      const cur = sel.kind === 'shape' ? (sel.shapeProps?.angle || 0) : (sel.rotAngle || 0);
+      RotateKit.rotateTo(sel.id, cur);
+      pushUndoSnapshot();
+    }
+    return;
+  }
   if (sel) {
     // Only push snapshot if position/size actually changed
     const changed = wasInteract === 'resize'

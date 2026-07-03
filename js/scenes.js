@@ -82,6 +82,7 @@
       textAnimDir: layer.textAnimDir, textDrawStyle: layer.textDrawStyle,
       kind: layer.kind || null, textProps: layer.textProps || null,
       gifSrc: layer.gifSrc || null,
+      gifRot: layer.gifRot || 0,
       startAt: layer.startAt ?? null, drawFor: layer.drawFor ?? null,
       shapeProps: layer.shapeProps ? { ...layer.shapeProps } : null,
     };
@@ -106,6 +107,7 @@
         textAnimDir: ld.textAnimDir, textDrawStyle: ld.textDrawStyle,
         kind: ld.kind || null, textProps: ld.textProps || null,
         gifSrc: ld.gifSrc || null,
+        gifRot: ld.gifRot || 0,
         startAt: ld.startAt ?? null, drawFor: ld.drawFor ?? null,
         shapeProps: ld.shapeProps ? { ...ld.shapeProps } : null,
       };

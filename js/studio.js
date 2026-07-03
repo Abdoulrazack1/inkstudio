@@ -44,7 +44,12 @@
           frames.push({ c, end: total });
         }
         dec.close();
-        if (frames.length > 1) layer.gif = { frames, total };
+        if (frames.length > 1) {
+          layer.gif = { frames, total };
+          // A rotated GIF layer persists its baked angle: re-apply to the
+          // freshly decoded (unrotated) frames so they match layer.img.
+          if (layer.gifRot) _rotateGifFrames(layer);
+        }
         return !!layer.gif;
       } catch (err) {
         console.warn('GIF decode failed:', err);
@@ -692,21 +697,18 @@
     img.src = src.toDataURL('image/png');
   }
 
-  // Change color / thickness / angle of an existing shape layer (same wobble)
+  // Change color / thickness / angle of an existing shape layer (same wobble).
+  // Synchronous: layer.img becomes a canvas (drawImage & serialization both OK).
   function restyleShape(id, patch) {
     const layer = typeof getLayerById === 'function' ? getLayerById(id) : null;
     if (!layer || layer.kind !== 'shape' || !layer.shapeProps) return;
     pushUndoSnapshot();
     Object.assign(layer.shapeProps, patch);
-    const img = new Image();
-    img.onload = () => {
-      layer.img = img;
-      redrawLayersOnCanvas();
-      if (typeof drawSelectionHandles === 'function') drawSelectionHandles();
-      if (window.SceneManager) SceneManager.renderStrip();
-      scheduleAutoSave();
-    };
-    img.src = renderShape(layer.shapeProps).toDataURL('image/png');
+    layer.img = renderShape(layer.shapeProps);
+    redrawLayersOnCanvas();
+    if (typeof drawSelectionHandles === 'function') drawSelectionHandles();
+    if (window.SceneManager) SceneManager.renderStrip();
+    scheduleAutoSave();
   }
   window.ShapeKit = { addShape, restyleShape, renderShape, colors: SHAPE_COLORS };
 
@@ -830,6 +832,81 @@
     });
     picker.parentElement.insertBefore(row, picker);
   }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // 6bis. ROTATION — any layer can rotate. The rotation is baked into the
+  // bitmap, always re-rendered from the ORIGINAL image (no quality loss on
+  // repeated rotations). Shapes re-render as vectors; GIF frames rotate too.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  function _bakeRotate(base, deg) {
+    const rad = (deg * Math.PI) / 180;
+    const bw = base.width || base.naturalWidth, bh = base.height || base.naturalHeight;
+    const cos = Math.abs(Math.cos(rad)), sin = Math.abs(Math.sin(rad));
+    const cw = Math.max(1, Math.ceil(bw * cos + bh * sin));
+    const ch = Math.max(1, Math.ceil(bw * sin + bh * cos));
+    const c = document.createElement('canvas');
+    c.width = cw; c.height = ch;
+    const g = c.getContext('2d');
+    g.translate(cw / 2, ch / 2);
+    g.rotate(rad);
+    g.drawImage(base, -bw / 2, -bh / 2);
+    return c;
+  }
+
+  function _rotateGifFrames(layer) {
+    if (!layer.gif) return;
+    if (!layer._gifBase) layer._gifBase = layer.gif.frames.map(f => f.c);
+    layer.gif.frames.forEach((f, i) => { f.c = _bakeRotate(layer._gifBase[i], layer.gifRot || 0); });
+  }
+
+  function rotateTo(id, deg, opts = {}) {
+    const layer = typeof getLayerById === 'function' ? getLayerById(id) : null;
+    if (!layer || !layer.img || state.playing) return;
+    deg = Math.round(((deg % 360) + 360) % 360);
+
+    if (layer.kind === 'shape' && layer.shapeProps) {
+      // Vector re-render — always crisp, square canvas so the box is stable
+      layer.shapeProps.angle = deg;
+      layer.rotAngle = deg;
+      layer.img = renderShape(layer.shapeProps);
+    } else {
+      if (!layer._rotBase) { layer._rotBase = layer.img; layer.rotAngle = layer.rotAngle || 0; }
+      const cx = layer.x + layer.w / 2, cy = layer.y + layer.h / 2;
+      const sw = layer.w / (layer.img.width || layer.img.naturalWidth || 1);
+      const sh = layer.h / (layer.img.height || layer.img.naturalHeight || 1);
+      const rotated = _bakeRotate(layer._rotBase, deg);
+      layer.img = rotated;
+      layer.w = Math.max(20, Math.round(rotated.width * sw));
+      layer.h = Math.max(20, Math.round(rotated.height * sh));
+      layer.x = Math.round(cx - layer.w / 2);
+      layer.y = Math.round(cy - layer.h / 2);
+      layer.rotAngle = deg;
+      if (layer.gif) {
+        layer.gifRot = deg;
+        if (opts.light) layer._gifNeedsRot = true;
+        else { _rotateGifFrames(layer); layer._gifNeedsRot = false; }
+      }
+    }
+
+    redrawLayersOnCanvas();
+    if (typeof drawSelectionHandles === 'function') drawSelectionHandles();
+    if (!opts.silent) {
+      if (layer._gifNeedsRot) { _rotateGifFrames(layer); layer._gifNeedsRot = false; }
+      renderLayerList();
+      if (window.SceneManager) SceneManager.renderStrip();
+      scheduleAutoSave();
+    }
+  }
+
+  function rotateBy(id, delta) {
+    const layer = typeof getLayerById === 'function' ? getLayerById(id) : null;
+    if (!layer) return;
+    const cur = layer.kind === 'shape' ? (layer.shapeProps?.angle || 0) : (layer.rotAngle || 0);
+    pushUndoSnapshot();
+    rotateTo(id, cur + delta);
+  }
+  window.RotateKit = { rotateTo, rotateBy };
 
   // ═════════════════════════════════════════════════════════════════════════
   // 7. AUTO CAMERA — during playback/export the virtual camera eases toward

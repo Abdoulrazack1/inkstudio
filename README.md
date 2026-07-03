@@ -67,6 +67,7 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 
 ### 🧰 Layer tools
 - **⇋ / ⇅ flip** the selected layer (GIF frames flip too) · **⧉ duplicate** (`Ctrl+D`)
+- **⟳ Rotation** for every layer: drag the knob above the selection (Shift = 15° steps), or use the Rotation row in the layer card (±90, ±15, exact angle). Always re-rendered from the original image — no quality loss; shapes rotate as vectors, GIF frames rotate too
 - **⏱ Per-drawing timing** (Timing section on the selected layer): **Départ** = the drawing waits until that second of the scene before starting · **Durée** = exact drawing time — snapped to its finished image if too slow, held on screen if it finishes early. Works in Play, Play all and both exports.
 
 ### 🔧 Fixes
