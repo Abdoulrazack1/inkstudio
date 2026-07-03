@@ -3978,6 +3978,9 @@ input[type="number"]:focus { border-color: var(--accent); }
           <div class="bg-preset" title="Graph" data-bg-key="graph"
             style="background:linear-gradient(#c8d8e4 1px,transparent 1px) 0 0/100% 20px,linear-gradient(90deg,#c8d8e4 1px,transparent 1px) 0 0/20px 100%,#f0f6fa"
             onclick="selectBgPreset(this,'gradient','graph')"></div>
+          <div class="bg-preset" title="Graph rose" data-bg-key="graphpink"
+            style="background:linear-gradient(#efc3d8 1px,transparent 1px) 0 0/100% 20px,linear-gradient(90deg,#efc3d8 1px,transparent 1px) 0 0/20px 100%,#fdf2f7"
+            onclick="selectBgPreset(this,'gradient','graphpink')"></div>
           <div class="bg-preset" title="Cream" data-bg-key="cream"
             style="background:radial-gradient(ellipse at 30% 20%,#ede0c4 0%,#e8d5a0 40%,#d4b87a 100%)"
             onclick="selectBgPreset(this,'gradient','cream')"></div>
@@ -5775,6 +5778,15 @@ const BG_GRADIENTS = {
     for(let x=0;x<state.canvasW;x+=20){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,state.canvasH);ctx.stroke();}
     for(let y=0;y<state.canvasH;y+=20){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(state.canvasW,y);ctx.stroke();}
     ctx.strokeStyle='#c8d8e4'; ctx.lineWidth=1;
+    for(let x=0;x<state.canvasW;x+=100){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,state.canvasH);ctx.stroke();}
+    for(let y=0;y<state.canvasH;y+=100){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(state.canvasW,y);ctx.stroke();}
+  },
+  graphpink: ctx => {
+    ctx.fillStyle='#fdf2f7'; ctx.fillRect(0,0,state.canvasW,state.canvasH);
+    ctx.strokeStyle='#f7dfe9'; ctx.lineWidth=0.5;
+    for(let x=0;x<state.canvasW;x+=20){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,state.canvasH);ctx.stroke();}
+    for(let y=0;y<state.canvasH;y+=20){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(state.canvasW,y);ctx.stroke();}
+    ctx.strokeStyle='#efc3d8'; ctx.lineWidth=1;
     for(let x=0;x<state.canvasW;x+=100){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,state.canvasH);ctx.stroke();}
     for(let y=0;y<state.canvasH;y+=100){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(state.canvasW,y);ctx.stroke();}
   },
