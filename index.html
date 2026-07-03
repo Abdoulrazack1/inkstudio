@@ -9377,8 +9377,15 @@ function recordWebM(progressText, progressBar) {
         if (!state.recording) return;
         rctx.clearRect(0, 0, state.canvasW, state.canvasH);
         const mainCanvas = document.getElementById('main-canvas');
-        rctx.drawImage(mainCanvas, 0, 0);
-        rctx.drawImage(handCanvas, 0, 0);
+        // Auto camera: crop the focused region at composite time
+        const cam = window.Camera ? Camera.view() : null;
+        if (cam) {
+          rctx.drawImage(mainCanvas, cam.sx, cam.sy, cam.sw, cam.sh, 0, 0, state.canvasW, state.canvasH);
+          rctx.drawImage(handCanvas, cam.sx, cam.sy, cam.sw, cam.sh, 0, 0, state.canvasW, state.canvasH);
+        } else {
+          rctx.drawImage(mainCanvas, 0, 0);
+          rctx.drawImage(handCanvas, 0, 0);
+        }
         requestAnimationFrame(syncLoop);
       })();
       
@@ -9540,10 +9547,16 @@ function recordMP4(progressText, progressBar) {
           return;
         }
 
-        // Draw at full even-pixel dimensions
+        // Draw at full even-pixel dimensions (auto camera crops at composite time)
         rctx.clearRect(0, 0, W, H);
-        rctx.drawImage(mainCvs,   0, 0, state.canvasW, state.canvasH, 0, 0, W, H);
-        rctx.drawImage(handCanvas, 0, 0, state.canvasW, state.canvasH, 0, 0, W, H);
+        const cam = window.Camera ? Camera.view() : null;
+        if (cam) {
+          rctx.drawImage(mainCvs,    cam.sx, cam.sy, cam.sw, cam.sh, 0, 0, W, H);
+          rctx.drawImage(handCanvas, cam.sx, cam.sy, cam.sw, cam.sh, 0, 0, W, H);
+        } else {
+          rctx.drawImage(mainCvs,   0, 0, state.canvasW, state.canvasH, 0, 0, W, H);
+          rctx.drawImage(handCanvas, 0, 0, state.canvasW, state.canvasH, 0, 0, W, H);
+        }
 
         const ts       = Math.round((frameCount / FPS) * 1_000_000); // microseconds
         const duration = Math.round(1_000_000 / FPS);

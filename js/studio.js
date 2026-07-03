@@ -65,12 +65,20 @@
   };
   window.GifKit = GifKit;
 
+  // Background-resilient frame scheduler: rAF normally, setTimeout when the
+  // window is hidden (Chromium parks rAF entirely on occluded windows — this
+  // keeps the GIF clock and the camera easing alive during background exports).
+  const _tickBg = fn => {
+    if (document.hidden) setTimeout(() => fn(performance.now()), 33);
+    else requestAnimationFrame(fn);
+  };
+
   // Repaint loop: keeps GIF layers moving while editing, after a scene's
   // drawing animation completes, and during export holds (the exports
   // composite the main canvas every frame, so they capture this for free).
   let _lastGifPaint = 0;
   (function gifTick() {
-    requestAnimationFrame(gifTick);
+    _tickBg(gifTick);
     if (window._gifPause) return;
     if (typeof state === 'undefined' || state.playing) return;
     if (typeof _ts !== 'undefined' && _ts.active) return; // text editor open
@@ -225,6 +233,7 @@
       <button data-zp="in"   title="Zoom avant (Ctrl+molette / Ctrl +)">+</button>
       <span class="zp-sep"></span>
       <button data-zp="px"   title="Taille réelle — 1 pixel canvas = 1 pixel écran">1:1</button>
+      <button data-zp="cam" id="ink-cam-btn" title="Caméra auto — zoome sur chaque dessin pendant la lecture et l'export (clic = réglages)">🎥</button>
       <button data-zp="tiktok" title="Format TikTok — passe le canvas en 9:16 1080×1920 et affiche la safe-zone">🎬 TikTok</button>
       <button data-zp="safe" id="ink-safe-btn" title="Safe-zone TikTok — zones cachées par l'interface (légende, boutons)">📱</button>
       <button data-zp="focus" id="ink-focus-btn" title="Mode focus — masque les panneaux (F)">⛶</button>`;
@@ -234,6 +243,7 @@
       else if (act === 'out') zoomCenter(0.8);
       else if (act === 'fit') resetView();
       else if (act === 'px') zoom100();
+      else if (act === 'cam') _openCamPop(e.target);
       else if (act === 'tiktok') setTikTokFormat();
       else if (act === 'safe') toggleSafeZone();
       else if (act === 'focus') toggleFocus();
@@ -796,6 +806,137 @@
   }
 
   // ═════════════════════════════════════════════════════════════════════════
+  // 7. AUTO CAMERA — during playback/export the virtual camera eases toward
+  // the drawing (or text) currently being drawn, with a moderate zoom, then
+  // eases back to the full frame. Preview = CSS transform on the canvas
+  // stack; exports read Camera.view() and crop at composite time.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  const Camera = {
+    enabled: true,
+    strength: 1.7, // max zoom — "pas trop proche"
+    cur: { z: 1, cx: 640, cy: 360 },
+    // Source rect for the exports (null = full frame)
+    view() {
+      const c = this.cur;
+      if (!(c.z > 1.004)) return null;
+      const sw = state.canvasW / c.z, sh = state.canvasH / c.z;
+      const sx = Math.max(0, Math.min(state.canvasW - sw, c.cx - sw / 2));
+      const sy = Math.max(0, Math.min(state.canvasH - sh, c.cy - sh / 2));
+      return { sx, sy, sw, sh };
+    },
+  };
+  window.Camera = Camera;
+  try {
+    Camera.enabled = localStorage.getItem('ink-camera-on') !== '0';
+    const s = parseFloat(localStorage.getItem('ink-camera-strength'));
+    if (s >= 1.2 && s <= 3) Camera.strength = s;
+  } catch (e) {}
+
+  function _cameraTarget() {
+    const full = { z: 1, cx: state.canvasW / 2, cy: state.canvasH / 2 };
+    if (!Camera.enabled || state.done) return full;
+    if (!state.playing && !(state._activeSlots && state._activeSlots.length)) return full;
+    const group = state._animGroups?.[state._groupPos ?? 0];
+    if (!group || !group.length) return full;
+    // Union bounds of the layers being drawn right now
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    group.forEach(l => {
+      if (l.visible === false) return;
+      x0 = Math.min(x0, l.x); y0 = Math.min(y0, l.y);
+      x1 = Math.max(x1, l.x + l.w); y1 = Math.max(y1, l.y + l.h);
+    });
+    if (!isFinite(x0) || x1 <= x0 || y1 <= y0) return full;
+    // Frame the drawing with a 35% breathing margin, capped by the strength
+    const MARGIN = 1.35;
+    const zFit = Math.min(state.canvasW / ((x1 - x0) * MARGIN), state.canvasH / ((y1 - y0) * MARGIN));
+    const z = Math.max(1, Math.min(Camera.strength, zFit));
+    if (z <= 1.03) return full;
+    return { z, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
+  }
+
+  let _camCssOn = false;
+
+  function _applyCamCss() {
+    const c = Camera.cur;
+    if (!(c.z > 1.004)) {
+      if (_camCssOn) { wrap.classList.remove('ink-cam-on'); _camCssOn = false; }
+      return;
+    }
+    const k = (parseFloat(canvas.style.width) || canvas.getBoundingClientRect().width) / state.canvasW;
+    const W = state.canvasW * k, H = state.canvasH * k;
+    let tx = W / 2 - c.z * c.cx * k;
+    let ty = H / 2 - c.z * c.cy * k;
+    tx = Math.min(0, Math.max(W * (1 - c.z), tx));
+    ty = Math.min(0, Math.max(H * (1 - c.z), ty));
+    wrap.style.setProperty('--cam-x', tx + 'px');
+    wrap.style.setProperty('--cam-y', ty + 'px');
+    wrap.style.setProperty('--cam-z', c.z);
+    if (!_camCssOn) { wrap.classList.add('ink-cam-on'); _camCssOn = true; }
+  }
+
+  let _camLastT = performance.now();
+  (function camTick() {
+    _tickBg(camTick);
+    if (typeof state === 'undefined') return;
+    const now = performance.now();
+    const dt = Math.min(0.2, (now - _camLastT) / 1000);
+    _camLastT = now;
+    const t = _cameraTarget();
+    const c = Camera.cur;
+    // Time-based easing (frame-rate independent). Zoom in noticeably faster
+    // than out — the 200ms gap between two drawings then only produces a
+    // tiny breath instead of a full reset.
+    const rate = t.z > c.z ? 4.5 : 1.7; // per second
+    const k = 1 - Math.exp(-rate * dt);
+    c.z += (t.z - c.z) * k;
+    c.cx += (t.cx - c.cx) * k;
+    c.cy += (t.cy - c.cy) * k;
+    // Keep the view inside the canvas
+    const vw = state.canvasW / c.z, vh = state.canvasH / c.z;
+    c.cx = Math.max(vw / 2, Math.min(state.canvasW - vw / 2, c.cx));
+    c.cy = Math.max(vh / 2, Math.min(state.canvasH - vh / 2, c.cy));
+    _applyCamCss();
+  })();
+
+  // ── Camera settings popover (🎥 in the zoom pill) ─────────────────────────
+
+  function _closeCamPop() { document.getElementById('ink-cam-pop')?.remove(); }
+
+  function _openCamPop(anchor) {
+    _closeCamPop();
+    const pop = document.createElement('div');
+    pop.id = 'ink-cam-pop';
+    pop.innerHTML = `
+      <label class="cam-row"><input type="checkbox" id="cam-on" ${Camera.enabled ? 'checked' : ''}> Caméra auto — zoome sur chaque dessin/texte pendant qu'il se fait</label>
+      <label class="cam-row">Intensité <input type="range" id="cam-str" min="1.2" max="2.6" step="0.1" value="${Camera.strength}"><span id="cam-str-val">×${Camera.strength.toFixed(1)}</span></label>
+      <div class="cam-hint">S'applique à la lecture ET aux exports. Le zoom garde 35% de marge autour du dessin — jamais collé dessus.</div>`;
+    document.body.appendChild(pop);
+    pop.querySelector('#cam-on').addEventListener('change', e => {
+      Camera.enabled = e.target.checked;
+      try { localStorage.setItem('ink-camera-on', Camera.enabled ? '1' : '0'); } catch (err) {}
+      _syncCamBtn();
+    });
+    pop.querySelector('#cam-str').addEventListener('input', e => {
+      Camera.strength = +e.target.value;
+      pop.querySelector('#cam-str-val').textContent = `×${Camera.strength.toFixed(1)}`;
+      try { localStorage.setItem('ink-camera-strength', Camera.strength); } catch (err) {}
+    });
+    const r = anchor.getBoundingClientRect();
+    pop.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+    pop.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+    setTimeout(() => {
+      const onDoc = e => { if (!pop.contains(e.target) && e.target !== anchor) { _closeCamPop(); document.removeEventListener('mousedown', onDoc); } };
+      document.addEventListener('mousedown', onDoc);
+    }, 0);
+  }
+
+  function _syncCamBtn() {
+    const b = document.getElementById('ink-cam-btn');
+    if (b) b.classList.toggle('on', Camera.enabled);
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
   // STYLES + INIT
   // ═════════════════════════════════════════════════════════════════════════
 
@@ -869,6 +1010,24 @@ body.ink-focus #bottom-bar { display: none !important; }
   padding: 5px 10px; font-size: 11px; font-weight: 600; cursor: pointer;
 }
 
+/* Auto camera: transform the whole canvas stack (main + hand + overlays) */
+#canvas-wrapper.ink-cam-on canvas {
+  transform: translate(var(--cam-x), var(--cam-y)) scale(var(--cam-z));
+  transform-origin: 0 0;
+}
+
+/* Camera settings popover */
+#ink-cam-pop {
+  position: fixed; z-index: 4000; width: 262px; background: #fff;
+  border: 1px solid rgba(0,0,0,0.18); border-radius: 10px; padding: 11px;
+  box-shadow: 0 10px 32px rgba(0,0,0,0.22);
+  display: flex; flex-direction: column; gap: 8px; font-size: 11px; color: #333;
+}
+#ink-cam-pop .cam-row { display: flex; align-items: center; gap: 7px; }
+#ink-cam-pop .cam-row input[type="range"] { flex: 1; min-width: 0; }
+#ink-cam-pop #cam-str-val { font-size: 10px; color: #777; min-width: 30px; }
+#ink-cam-pop .cam-hint { font-size: 9px; color: #888; line-height: 1.5; }
+
 /* Shape popover */
 #ink-shape-pop {
   position: fixed; z-index: 4000; width: 296px; background: #fff;
@@ -917,6 +1076,7 @@ body.ink-focus #bottom-bar { display: none !important; }
   _injectShapeButton();
   _injectTextPresets();
   try { if (localStorage.getItem('ink-safezone') === '1') toggleSafeZone(true); } catch (e) {}
+  _syncCamBtn();
 
   window.InkView = { zoomAt, zoomCenter, resetView, zoom100, toggleFocus };
 })();

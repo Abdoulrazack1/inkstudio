@@ -55,6 +55,11 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 - **😀 Emoji stickers**: pick from a manga-flavored grid (or type any emoji) — lands as a normal layer that gets hand-drawn like the rest
 - Exported files are named after the project (`mon-projet-2026-….mp4`)
 
+### 🎥 Auto camera
+- During playback **and in the exported video**, the virtual camera eases toward each drawing/text while it's being drawn, then eases back to the full frame — automatic Ken Burns
+- Moderate by design: 35% breathing margin around the drawing, zoom capped at ×1.7 (adjustable ×1.2–×2.6 in the 🎥 popover of the zoom pill, on/off toggle, persisted)
+- Combine with per-layer timing for full control: "focus on this spot at second 6 for 2.5s" = give that layer Départ 6 / Durée 2.5
+
 ### ➜ Hand-drawn shapes
 - **Shapes tool** in the canvas toolbar: arrow, double arrow, curved arrow, circle, frame, underline, speech bubble, manga focus lines, star, heart — all in a wobbly hand-drawn style with live preview thumbnails
 - Pick **color, thickness and angle** before placing — and change them **after** placement too (Forme section on the layer): the shape re-renders with the exact same strokes
