@@ -16,7 +16,8 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 - `PageUp` / `PageDown` to jump between scenes
 
 ### 🎙 Voice-over with real sync
-- Import your narration (mp3, wav, ogg, m4a…) — a **real audio timeline** appears under the scene strip: 66px waveform, time ruler, `Ctrl+wheel` horizontal zoom (×1–×16) with scroll
+- Import your narration (mp3, wav, ogg, m4a…) — or **⏺ record straight from the mic** in the app (live timer, imports into the voice track on stop)
+- A **real audio timeline** appears under the scene strip: 66px waveform, time ruler, `Ctrl+wheel` horizontal zoom (×1–×16) with scroll
 - **Transport**: play/pause with resume, stop, back-to-start, live time readout, click/drag the waveform to seek & scrub
 - **✂ Trim**: cut the head/tail of the narration (Début/Fin in seconds) — the video timeline starts at the trimmed point, in preview and exports
 - **Voice volume** (0–150%), applied in preview, WebM and MP4
@@ -40,6 +41,7 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 - Measured scene durations shown on thumbnails after each playback
 
 ### 🎯 Precision canvas
+- **Alignment buttons** on each layer: snap to the canvas left/center/right, top/middle/bottom, or dead center in one click
 - **Magnetic smart guides** while dragging: layers snap to the canvas center/edges and to other layers' edges & centers (dashed pink guides, hold `Alt` to disable)
 - **Live readout** while dragging (`x, y`) and resizing (`w × h`)
 - **Arrow keys nudge** the selected layer 1px (`Shift` = 10px) · **`Ctrl+↑/↓` moves it through the layer stack**
@@ -75,7 +77,7 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 - Combine with per-layer timing for full control: "focus on this spot at second 6 for 2.5s" = give that layer Départ 6 / Durée 2.5
 
 ### ➜ Hand-drawn shapes
-- **Shapes tool** in the canvas toolbar: arrow, double arrow, curved arrow, circle, frame, underline, speech bubble, manga focus lines, star, heart — all in a wobbly hand-drawn style with live preview thumbnails
+- **Shapes tool** in the canvas toolbar: arrow, double arrow, curved arrow, circle, frame, underline, speech bubble, focus burst, **manga speed lines**, **highlighter bar**, star, heart — hand-drawn style with live preview thumbnails
 - Pick **color, thickness and angle** before placing — and change them **after** placement too (Forme section on the layer): the shape re-renders with the exact same strokes
 - Shapes are normal layers: they get hand-drawn by the animation, support timing (départ/durée), flip, duplicate, and persist with the project
 

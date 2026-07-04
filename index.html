@@ -6549,6 +6549,14 @@ function _buildLayerItem(layer) {
         style="width:100%;margin-bottom:10px;padding:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border-hi);border-radius:6px;background:var(--panel);color:var(--text);display:flex;align-items:center;justify-content:center;gap:5px;">
         🎯 Caler au playhead voix
       </button>
+      <div class="section-label" style="margin-top:2px">Alignement (au canvas)</div>
+      <div style="display:flex;gap:3px;margin:4px 0 9px;flex-wrap:wrap;">
+        ${[['left','⇤','Bord gauche'],['hcenter','⇔','Centre horizontal'],['right','⇥','Bord droit'],
+           ['top','⤒','Bord haut'],['vcenter','⇕','Centre vertical'],['bottom','⤓','Bord bas'],
+           ['center','⊕','Centre exact']].map(([how,ic,t]) =>
+          `<button onclick="event.stopPropagation();alignLayer(${layer.id},'${how}')" title="${t}"
+            style="flex:1;min-width:26px;padding:4px 0;font-size:12px;cursor:pointer;border:1px solid var(--border-hi);border-radius:5px;background:var(--panel);color:var(--text);">${ic}</button>`).join('')}
+      </div>
       <div class="section-label" style="margin-top:2px">Position &amp; Size</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;font-size:10px;color:var(--muted)">
         <div>X <input type="number" style="width:100%;margin-top:3px" value="${Math.round(layer.x)}" onchange="setLayerPos(${layer.id},'x',+this.value)"></div>
@@ -6584,6 +6592,21 @@ function _buildLayerItem(layer) {
   return item;
 }
 
+function alignLayer(id, how) {
+  const l = getLayerById(id); if (!l || state.playing) return;
+  pushUndoSnapshot();
+  const W = state.canvasW, H = state.canvasH;
+  if (how === 'left')                        l.x = 0;
+  if (how === 'right')                       l.x = W - l.w;
+  if (how === 'hcenter' || how === 'center') l.x = Math.round((W - l.w) / 2);
+  if (how === 'top')                         l.y = 0;
+  if (how === 'bottom')                      l.y = H - l.h;
+  if (how === 'vcenter' || how === 'center') l.y = Math.round((H - l.h) / 2);
+  redrawLayersOnCanvas();
+  drawSelectionHandles();
+  renderLayerList();
+  scheduleAutoSave();
+}
 function setLayerPos(id, prop, val) {
   pushUndoSnapshot();
   const l = getLayerById(id); if(!l) return;

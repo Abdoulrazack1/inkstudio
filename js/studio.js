@@ -522,6 +522,8 @@
     { type: 'underline',   label: 'Souligné' },
     { type: 'bubble',      label: 'Bulle' },
     { type: 'burst',       label: 'Focus' },
+    { type: 'speedlines',  label: 'Speed' },
+    { type: 'highlight',   label: 'Surligneur' },
     { type: 'star',        label: 'Étoile' },
     { type: 'heart',       label: 'Cœur' },
   ];
@@ -617,6 +619,17 @@
         }
         break;
       }
+      case 'speedlines': {
+        // Manga concentration lines: full radial lines with a clear center
+        const n = 46;
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * 6.283 + (rnd() - 0.5) * 0.05;
+          const r0 = R * 0.30 * (0.9 + rnd() * 0.25);
+          pts.push(line(Math.cos(a) * r0, Math.sin(a) * r0 * 0.9,
+                        Math.cos(a) * R * 1.15, Math.sin(a) * R * 1.05, 3));
+        }
+        break;
+      }
       case 'star': {
         const p = [];
         for (let i = 0; i <= 10; i++) {
@@ -655,6 +668,20 @@
     g.strokeStyle = props.color || '#1a1a1a';
     g.lineCap = 'round';
     g.lineJoin = 'round';
+
+    // Highlighter: a filled semi-transparent bar to emphasize text underneath
+    if (props.type === 'highlight') {
+      g.globalAlpha = 0.4;
+      g.fillStyle = props.color || '#facc15';
+      const w = 250, h = 68, r = 16;
+      g.beginPath();
+      if (g.roundRect) g.roundRect(-w, -h, 2 * w, 2 * h, r);
+      else g.rect(-w, -h, 2 * w, 2 * h);
+      g.fill();
+      g.globalAlpha = 1;
+      return c;
+    }
+
     const j = th * 0.35 + 2; // wobble amplitude
     _shapePaths(props.type, rnd).forEach(poly => {
       for (let pass = 0; pass < 2; pass++) {

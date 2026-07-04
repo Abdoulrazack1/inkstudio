@@ -65,6 +65,59 @@
 
   // ── Import / decode ───────────────────────────────────────────────────────
 
+  // ── Mic recording (records straight into the voice track) ─────────────────
+
+  let mediaRec = null, mediaStream = null, recChunks = [], recStartT = 0, recTimer = null;
+  const _isRecording = () => !!(mediaRec && mediaRec.state === 'recording');
+
+  async function startMicRecording(btn) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showToast('🎙 Enregistrement non supporté par ce navigateur', null, 3500); return;
+    }
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+    } catch (e) {
+      showToast('🎙 Micro indisponible ou refusé — autorise l\'accès au micro', null, 4000);
+      return;
+    }
+    recChunks = [];
+    const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'].find(m => MediaRecorder.isTypeSupported(m)) || '';
+    mediaRec = new MediaRecorder(mediaStream, mime ? { mimeType: mime } : undefined);
+    mediaRec.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
+    mediaRec.onstop = async () => {
+      if (recTimer) { clearInterval(recTimer); recTimer = null; }
+      const blob = new Blob(recChunks, { type: (mediaRec && mediaRec.mimeType) || 'audio/webm' });
+      if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+      mediaRec = null;
+      if (blob.size < 200) { showToast('Enregistrement vide', null, 3000); return; }
+      await importFile(new File([blob], `voix-enregistree-${Date.now()}.webm`, { type: blob.type }));
+    };
+    mediaRec.start();
+    recStartT = performance.now();
+    _updateRecBtn(btn);
+    recTimer = setInterval(() => _updateRecBtn(btn), 250);
+    showToast('🎙 Enregistrement… parle, puis clique ⏹ pour arrêter', null, 2500);
+  }
+
+  function stopMicRecording() {
+    if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
+  }
+
+  function _updateRecBtn(btn) {
+    if (!btn) return;
+    if (_isRecording()) {
+      btn.innerHTML = `⏹ Stop ${_fmt((performance.now() - recStartT) / 1000)}`;
+      btn.style.color = '#dc2626';
+      btn.style.borderColor = '#dc2626';
+      btn.style.fontWeight = '700';
+    } else {
+      btn.innerHTML = '⏺ Enregistrer';
+      btn.style.color = ''; btn.style.borderColor = ''; btn.style.fontWeight = '';
+    }
+  }
+
   async function importFile(file) {
     try {
       const url = await new Promise((res, rej) => {
@@ -905,6 +958,16 @@
       fileInput.value = '';
     });
     transportEl.appendChild(fileInput);
+
+    // Record straight from the mic into the voice track
+    const rec = document.createElement('button');
+    rec.className = 'ss-btn';
+    rec.id = 'vo-rec-btn';
+    rec.innerHTML = _isRecording() ? '⏹ Stop' : '⏺ Enregistrer';
+    rec.title = 'Enregistre ta voix depuis le micro, directement dans la piste voix off' + (buffer ? ' (remplace la voix actuelle)' : '');
+    rec.addEventListener('click', () => { _isRecording() ? stopMicRecording() : startMicRecording(rec); });
+    transportEl.appendChild(rec);
+    if (_isRecording()) { _updateRecBtn(rec); recTimer = setInterval(() => _updateRecBtn(rec), 250); }
 
     if (!buffer) return;
 
