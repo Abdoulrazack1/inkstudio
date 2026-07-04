@@ -1848,8 +1848,8 @@ function _tickSlot(slot) {
   const _push = (id, v) => { const e=document.getElementById(id); if(e) e.value=v; };
   _push('speed-slider',      Math.round(speed));
   _push('hand-speed-slider', slot.layer.handSpeed  ?? 6);
-  _push('tile-slider',       slot.layer.chunks     ?? 30);
-  _push('spec-tile-slider',  slot.layer.specChunks ?? 35);
+  _push('tile-slider',       (typeof _layerChunks === 'function' ? _layerChunks(slot.layer, 'chunks')     : (slot.layer.chunks     ?? 30)));
+  _push('spec-tile-slider',  (typeof _layerChunks === 'function' ? _layerChunks(slot.layer, 'specChunks') : (slot.layer.specChunks ?? 35)));
 
   switch (state.animStyle) {
     case 'contour':       tickContour(speed);       break;
@@ -2215,8 +2215,8 @@ function _runGroupAt(gpos) {
     };
     _setSlider('speed-slider',      'speed-val',      slot.layer.speed      ?? 40);
     _setSlider('hand-speed-slider', 'hand-speed-val', slot.layer.handSpeed  ?? 6);
-    _setSlider('tile-slider',       'tile-val',       slot.layer.chunks     ?? 30);
-    _setSlider('spec-tile-slider',  'spec-tile-val',  slot.layer.specChunks ?? 35);
+    _setSlider('tile-slider',       'tile-val',       (typeof _layerChunks === 'function' ? _layerChunks(slot.layer, 'chunks')     : (slot.layer.chunks     ?? 30)));
+    _setSlider('spec-tile-slider',  'spec-tile-val',  (typeof _layerChunks === 'function' ? _layerChunks(slot.layer, 'specChunks') : (slot.layer.specChunks ?? 35)));
 
     // Push per-layer stroke style so setup functions read it correctly
     state.outlineStrokeStyle = slot.layer.outlineStrokeStyle || state.outlineStrokeStyle || 'default';

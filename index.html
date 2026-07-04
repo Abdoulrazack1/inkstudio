@@ -4366,6 +4366,7 @@ function saveProject(projectId = currentProjectId) {
           gifRot: layer.gifRot || 0,
           startAt: layer.startAt ?? null,
           drawFor: layer.drawFor ?? null,
+          autoChunks: layer.autoChunks || false,
           shapeProps: layer.shapeProps || null,
         })) : [],
         
@@ -4558,6 +4559,7 @@ function loadProject(projectId) {
                 gifRot: layerData.gifRot || 0,
                 startAt: layerData.startAt ?? null,
                 drawFor: layerData.drawFor ?? null,
+                autoChunks: layerData.autoChunks || false,
                 shapeProps: layerData.shapeProps || null,
               };
 
@@ -5004,6 +5006,7 @@ function _serializeState() {
       gifRot: layer.gifRot || 0,
       startAt: layer.startAt ?? null,
       drawFor: layer.drawFor ?? null,
+      autoChunks: layer.autoChunks || false,
       shapeProps: layer.shapeProps ? { ...layer.shapeProps } : null,
     })),
   };
@@ -5149,6 +5152,7 @@ function _applySnapshot(snap, label) {
           gifRot: ld.gifRot || 0,
           startAt: ld.startAt ?? null,
           drawFor: ld.drawFor ?? null,
+          autoChunks: ld.autoChunks || false,
           shapeProps: ld.shapeProps ? { ...ld.shapeProps } : null,
           _origImg: origImg || undefined,
           _origX: ld.origX, _origY: ld.origY,
@@ -6278,8 +6282,8 @@ function _runGroupAt(gpos, _timed) {
     };
     _setSlider('speed-slider',      'speed-val',      slot.layer.speed      ?? 40);
     _setSlider('hand-speed-slider', 'hand-speed-val', slot.layer.handSpeed  ?? 6);
-    _setSlider('tile-slider',       'tile-val',       slot.layer.chunks     ?? 30);
-    _setSlider('spec-tile-slider',  'spec-tile-val',  slot.layer.specChunks ?? 35);
+    _setSlider('tile-slider',       'tile-val',       _layerChunks(slot.layer, 'chunks'));
+    _setSlider('spec-tile-slider',  'spec-tile-val',  _layerChunks(slot.layer, 'specChunks'));
 
     // Push per-layer stroke style so setup functions read it correctly
     state.outlineStrokeStyle = slot.layer.outlineStrokeStyle || state.outlineStrokeStyle || 'default';
@@ -6534,6 +6538,12 @@ function _buildLayerItem(layer) {
         <div>⏳ Durée <input type="number" min="0" step="0.1" placeholder="auto" style="width:100%;margin-top:3px" value="${layer.drawFor ?? ''}"
           onclick="event.stopPropagation()" onchange="event.stopPropagation();setLayerDrawFor(${layer.id},this.value)"></div>
       </div>
+      <label title="Adapte automatiquement le nombre de chunks à la durée de CE calque (≈ 10 par seconde). Dessin court → peu de chunks (punchy) ; dessin long → beaucoup de chunks (fin et détaillé). Nécessite une Durée et un style à chunks (Chunk Jump, Scribble, Outline Chunks, Specialized)."
+        style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--muted);margin-bottom:8px;cursor:pointer;">
+        <input type="checkbox" ${layer.autoChunks ? 'checked' : ''} onclick="event.stopPropagation()"
+          onchange="event.stopPropagation();setLayerAutoChunks(${layer.id},this.checked)">
+        Chunks auto selon la durée${layer.autoChunks && layer.drawFor > 0 ? ` <b style="color:var(--accent)">≈ ${_autoChunkCount(layer.drawFor)}</b>` : (layer.autoChunks ? ' <span style="opacity:.7">(règle une Durée)</span>' : '')}
+      </label>
       <button onclick="event.stopPropagation();setLayerStartAtPlayhead(${layer.id})"
         title="Fait démarrer ce dessin exactement à la position du playhead sur la voix off. Écoute, mets le playhead sur le mot voulu, puis clique ici."
         style="width:100%;margin-bottom:10px;padding:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border-hi);border-radius:6px;background:var(--panel);color:var(--text);display:flex;align-items:center;justify-content:center;gap:5px;">
@@ -6621,7 +6631,25 @@ function setLayerDrawFor(id, val) {
   const n = parseFloat(val);
   l.drawFor = (val === '' || isNaN(n) || n <= 0) ? null : Math.round(n * 10) / 10;
   if (window.AudioVO) AudioVO.onScenesChanged();
+  if (l.autoChunks) renderLayerList(); // refresh the "(≈ N)" hint
   scheduleAutoSave();
+}
+function setLayerAutoChunks(id, checked) {
+  const l = getLayerById(id); if (!l) return;
+  l.autoChunks = !!checked;
+  renderLayerList();
+  scheduleAutoSave();
+}
+// Auto-chunks: derive the tile count from a layer's Durée (seconds).
+// ~10 chunks per second → longer drawings get finer motion, short ones stay punchy.
+function _autoChunkCount(seconds) {
+  return Math.max(6, Math.min(200, Math.round(10 * seconds)));
+}
+// Effective chunk count for a layer, honoring its autoChunks toggle.
+// which: 'chunks' (chunkjump/scribble/outlinechunks) | 'specChunks' (specialized)
+function _layerChunks(layer, which) {
+  if (layer && layer.autoChunks && layer.drawFor > 0) return _autoChunkCount(layer.drawFor);
+  return which === 'specChunks' ? (layer.specChunks ?? 35) : (layer.chunks ?? 30);
 }
 // Set a layer's "Départ" from the current voice playhead, relative to the
 // scene's own voice marker (so the drawing lands exactly where you heard it).

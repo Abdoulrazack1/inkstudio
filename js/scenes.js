@@ -85,6 +85,7 @@
       gifSrc: layer.gifSrc || null,
       gifRot: layer.gifRot || 0,
       startAt: layer.startAt ?? null, drawFor: layer.drawFor ?? null,
+      autoChunks: layer.autoChunks || false,
       shapeProps: layer.shapeProps ? { ...layer.shapeProps } : null,
     };
   }
@@ -110,6 +111,7 @@
         gifSrc: ld.gifSrc || null,
         gifRot: ld.gifRot || 0,
         startAt: ld.startAt ?? null, drawFor: ld.drawFor ?? null,
+        autoChunks: ld.autoChunks || false,
         shapeProps: ld.shapeProps ? { ...ld.shapeProps } : null,
       };
       if (!ld.imageDataURL) { resolve({ ...base, img: null }); return; }

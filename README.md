@@ -83,6 +83,7 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 - **⇋ / ⇅ flip** the selected layer (GIF frames flip too) · **⧉ duplicate** (`Ctrl+D`)
 - **⟳ Rotation** for every layer: drag the knob above the selection (Shift = 15° steps), or use the Rotation row in the layer card (±90, ±15, exact angle). Always re-rendered from the original image — no quality loss; shapes rotate as vectors, GIF frames rotate too
 - **⏱ Per-drawing timing** (Timing section on the selected layer): **Départ** = the drawing waits until that second of the scene before starting · **Durée** = exact drawing time — snapped to its finished image if too slow, held on screen if it finishes early. Works in Play, Play all and both exports.
+- **Chunks auto selon la durée** (per-layer toggle): the tile count of chunk styles (Chunk Jump, Scribble, Outline Chunks, Specialized) scales with **that layer's own Durée** — ~10 chunks/second, clamped 6–200. Short drawings stay punchy, long ones get fine, detailed motion. Each layer of each scene computes independently from its own duration.
 
 ### 🔧 Fixes
 - Fixed a layer-ID collision bug after loading a saved project (upstream `window._layerIdCounter` bug)
