@@ -4578,6 +4578,8 @@ function loadProject(projectId) {
                 } else if (state.layers.length > 0) {
                   selectLayer(state.layers[0].id);
                 }
+                // Layers are ready — refresh the voice waveform's layer markers
+                if (window.AudioVO) AudioVO.onScenesChanged();
               }
             };
             img.onerror = () => {

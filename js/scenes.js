@@ -891,6 +891,35 @@
     getScenes: () => scenes,
     isSequenceActive: () => _seq.active,
     colorFor: i => SCENE_COLORS[i % SCENE_COLORS.length],
+    // Layers of scene i (live for current, hydrated or pending for others).
+    // Returns the actual layer objects so callers can mutate startAt/drawFor.
+    layersOf: (i) => {
+      if (i === cur) return state.layers;
+      const s = scenes[i];
+      if (!s) return [];
+      return s.live ? s.live.layers : (s.pending ? s.pending.layers : []);
+    },
+    // Every drawing of every scene, anchored on the voice-over. Only scenes
+    // with a voice marker (or the current scene) place their layers on the
+    // timeline. Each cue carries a live reference to its layer object.
+    getLayerCues: () => {
+      const out = [];
+      scenes.forEach((s, i) => {
+        const segStart = (s.audioStart != null) ? s.audioStart : (i === cur ? 0 : null);
+        if (segStart == null) return;
+        const layers = (i === cur) ? state.layers
+          : (s.live ? s.live.layers : (s.pending ? s.pending.layers : []));
+        (layers || []).forEach(l => {
+          out.push({
+            scene: i, isCurrent: i === cur, segStart,
+            color: SCENE_COLORS[i % SCENE_COLORS.length],
+            layer: l, name: l.name, startAt: l.startAt, drawFor: l.drawFor,
+            visible: l.visible !== false,
+          });
+        });
+      });
+      return out;
+    },
   };
 
   // ── Init ──────────────────────────────────────────────────────────────────

@@ -416,6 +416,10 @@
     }
     _renderRow();
     _renderMusicRow();
+    // Layers and the audio buffer load on separate async paths (image onload
+    // vs decodeAudioData); whichever finishes last, refresh the waveform
+    // markers a few times so every scene's drawings show up.
+    if (buffer) [150, 500, 1100].forEach(ms => setTimeout(() => { if (buffer) _renderPins(); }, ms));
   }
 
   // ── Styles ────────────────────────────────────────────────────────────────
@@ -486,18 +490,20 @@
 }
 .vo-lay::before {
   content: ''; position: absolute; left: 5px; top: 0; bottom: 0; width: 2px;
-  background: #7c3aed; border-radius: 1px;
+  background: var(--lay-col, #7c3aed); border-radius: 1px;
 }
 .vo-lay::after {
   content: ''; position: absolute; left: 2px; top: -4px; width: 8px; height: 8px;
-  background: #7c3aed; transform: rotate(45deg); border-radius: 1px;
+  background: var(--lay-col, #7c3aed); transform: rotate(45deg); border-radius: 1px;
 }
+.vo-lay.other { opacity: 0.6; }
+.vo-lay.other::before { width: 1.5px; }
 .vo-lay-label {
   position: absolute; bottom: 100%; left: 8px; margin-bottom: 3px;
-  background: #7c3aed; color: #fff; font-size: 8px; font-weight: 700;
+  background: var(--lay-col, #7c3aed); color: #fff; font-size: 8px; font-weight: 700;
   border-radius: 3px; padding: 1px 4px; white-space: nowrap; display: none;
 }
-.vo-lay:hover .vo-lay-label { display: block; }
+.vo-lay:hover .vo-lay-label { display: block; z-index: 5; }
 #music-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 `;
     const st = document.createElement('style');
@@ -585,7 +591,7 @@
 
   function _renderPins() {
     if (!waveWrap || !buffer) return;
-    waveWrap.querySelectorAll('.vo-pin, .vo-seg').forEach(el => el.remove());
+    waveWrap.querySelectorAll('.vo-pin, .vo-seg, .vo-lay').forEach(el => el.remove());
     if (!window.SceneManager) return;
     const scenes = SceneManager.getScenes();
     const dur = duration();
@@ -647,76 +653,74 @@
       waveWrap.appendChild(pin);
     });
 
-    // ── Layer markers for the CURRENT scene: where each drawing starts on
-    // the voice. Drag to adjust the layer's "Départ". ──
-    const curScene = scenes[SceneManager.currentIndex()];
-    if (curScene && typeof state !== 'undefined') {
-      const segStart = curScene.audioStart ?? 0;
-      (state.layers || []).forEach(l => {
-        if (l.startAt == null || l.visible === false) return;
-        const t = segStart + l.startAt;
-        if (t > dur) return;
-        const el = document.createElement('div');
-        el.className = 'vo-lay';
-        el.style.left = `${(t / dur) * 100}%`;
-        el.title = `« ${l.name} » se dessine à ${t.toFixed(1)}s — glisse pour ajuster, double-clic pour retirer le départ`;
-        el.innerHTML = `<div class="vo-lay-label">✏ ${l.name}${l.drawFor ? ` · ${l.drawFor}s` : ''}</div>`;
-        el.addEventListener('dblclick', e => {
-          e.stopPropagation();
-          l.startAt = null;
-          _renderPins();
-          if (typeof renderLayerList === 'function') renderLayerList();
-          scheduleAutoSave();
-        });
-        el.addEventListener('mousedown', e => {
-          e.preventDefault(); e.stopPropagation();
-          const move = ev => {
-            const nt = Math.max(segStart, _xToTime(ev.clientX));
-            l.startAt = Math.round((nt - segStart) * 10) / 10;
-            el.style.left = `${((segStart + l.startAt) / dur) * 100}%`;
-            el.querySelector('.vo-lay-label').textContent = `✏ ${l.name} · ${(segStart + l.startAt).toFixed(1)}s`;
-          };
-          const up = () => {
-            document.removeEventListener('mousemove', move);
-            document.removeEventListener('mouseup', up);
-            _renderPins();
-            if (typeof renderLayerList === 'function') renderLayerList();
-            scheduleAutoSave();
-          };
-          document.addEventListener('mousemove', move);
-          document.addEventListener('mouseup', up);
-        });
-        waveWrap.appendChild(el);
+    // ── Layer markers for EVERY scene: where each drawing of each scene
+    // starts on the voice. Colored by scene, draggable, double-click clears.
+    // Only anchored scenes (with a voice marker) place their drawings on
+    // the voice; the current scene also shows when it isn't pinned (seg 0). ──
+    const cues = (SceneManager.getLayerCues ? SceneManager.getLayerCues() : []);
+    cues.forEach(cue => {
+      if (cue.startAt == null || !cue.visible) return;
+      const segStart = cue.segStart;
+      const t = segStart + cue.startAt;
+      if (t > dur) return;
+      const el = document.createElement('div');
+      el.className = 'vo-lay' + (cue.isCurrent ? '' : ' other');
+      el.style.left = `${(t / dur) * 100}%`;
+      el.style.setProperty('--lay-col', cue.color);
+      el.title = `Scène ${cue.scene + 1} · « ${cue.name} » se dessine à ${t.toFixed(1)}s — glisse pour ajuster, double-clic pour retirer`;
+      el.innerHTML = `<div class="vo-lay-label" style="--lay-col:${cue.color}">${cue.scene + 1}·✏ ${cue.name}${cue.drawFor ? ` · ${cue.drawFor}s` : ''}</div>`;
+      const refresh = () => {
+        _renderPins();
+        if (cue.isCurrent && typeof renderLayerList === 'function') renderLayerList();
+        scheduleAutoSave();
+      };
+      el.addEventListener('dblclick', e => {
+        e.stopPropagation();
+        cue.layer.startAt = null;
+        refresh();
       });
-    }
+      el.addEventListener('mousedown', e => {
+        e.preventDefault(); e.stopPropagation();
+        const move = ev => {
+          const nt = Math.max(segStart, _xToTime(ev.clientX));
+          cue.layer.startAt = Math.round((nt - segStart) * 10) / 10;
+          el.style.left = `${((segStart + cue.layer.startAt) / dur) * 100}%`;
+          el.querySelector('.vo-lay-label').textContent = `${cue.scene + 1}·✏ ${cue.name} · ${(segStart + cue.layer.startAt).toFixed(1)}s`;
+        };
+        const up = () => {
+          document.removeEventListener('mousemove', move);
+          document.removeEventListener('mouseup', up);
+          refresh();
+        };
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+      });
+      waveWrap.appendChild(el);
+    });
   }
 
-  // ── Auto-layers: spread the current scene's drawings over the speech
-  // bursts inside its audio slot (startAt + drawFor set automatically) ──
+  // ── Auto-layers: spread a scene's drawings over the speech bursts inside
+  // its audio slot (startAt + drawFor set automatically) ──
 
-  function autoLayerSync() {
-    if (!buffer || !window.SceneManager || typeof state === 'undefined') return;
-    const scenes = SceneManager.getScenes();
-    const ci = SceneManager.currentIndex();
-    const scene = scenes[ci];
-    if (!scene) return;
-    const layers = (state.layers || []).filter(l => l.visible !== false);
-    if (!layers.length) { showToast('Aucun calque visible dans cette scène'); return; }
-
-    const segStart = scene.audioStart ?? 0;
+  function _segEndFor(ci, scenes) {
     let segEnd = duration();
     for (let j = ci + 1; j < scenes.length; j++) {
       if (scenes[j].audioStart != null) { segEnd = scenes[j].audioStart; break; }
     }
-    if (segEnd - segStart < 0.5) { showToast('Segment de voix trop court pour cette scène'); return; }
+    return segEnd;
+  }
 
-    // Speech bursts inside the slot → their starts are natural cue points
+  // Mutate the given layers' startAt/drawFor to cover [segStart, segEnd].
+  // Returns how many visible layers were placed.
+  function _spreadLayers(layerArr, segStart, segEnd) {
+    const layers = (layerArr || []).filter(l => l.visible !== false);
+    if (!layers.length || segEnd - segStart < 0.5) return 0;
+
     let onsets = _speechIntervals()
       .filter(iv => iv[1] > segStart + 0.05 && iv[0] < segEnd - 0.2)
       .map(iv => Math.max(iv[0], segStart));
 
     if (onsets.length >= layers.length) {
-      // Pick evenly spaced onsets so the drawings cover the whole slot
       const picked = [];
       for (let k = 0; k < layers.length; k++) {
         picked.push(onsets[Math.round((k * (onsets.length - 1)) / Math.max(1, layers.length - 1))]);
@@ -726,22 +730,56 @@
       const span = segEnd - segStart;
       onsets = layers.map((_, k) => segStart + (span * k) / layers.length);
     }
-    // Strictly increasing with a minimal gap
     for (let k = 1; k < onsets.length; k++) {
       if (onsets[k] <= onsets[k - 1] + 0.3) onsets[k] = onsets[k - 1] + 0.3;
     }
-
     layers.forEach((l, k) => {
       const t0 = Math.min(onsets[k], segEnd - 0.5);
       const t1 = (k + 1 < onsets.length) ? Math.min(onsets[k + 1], segEnd) : segEnd;
       l.startAt = Math.round(Math.max(0, t0 - segStart) * 10) / 10;
       l.drawFor = Math.max(0.5, Math.round((t1 - t0) * 0.85 * 10) / 10); // 85% du créneau — respire
     });
+    return layers.length;
+  }
 
+  // Current scene only
+  function autoLayerSync() {
+    if (!buffer || !window.SceneManager || typeof state === 'undefined') return;
+    const scenes = SceneManager.getScenes();
+    const ci = SceneManager.currentIndex();
+    const scene = scenes[ci];
+    if (!scene) return;
+    const segStart = scene.audioStart ?? 0;
+    const segEnd = _segEndFor(ci, scenes);
+    const n = _spreadLayers(state.layers, segStart, segEnd);
+    if (!n) { showToast('Aucun calque visible, ou segment de voix trop court'); return; }
     if (typeof renderLayerList === 'function') renderLayerList();
     _renderPins();
     scheduleAutoSave();
-    showToast(`✨ ${layers.length} dessin${layers.length > 1 ? 's' : ''} calé${layers.length > 1 ? 's' : ''} sur la voix (${segStart.toFixed(1)}s → ${segEnd.toFixed(1)}s)`, null, 4000);
+    showToast(`✨ ${n} dessin${n > 1 ? 's' : ''} calé${n > 1 ? 's' : ''} sur la voix (${segStart.toFixed(1)}s → ${segEnd.toFixed(1)}s)`, null, 4000);
+  }
+
+  // Every anchored scene at once (each layer of each scene)
+  function autoLayerSyncAll() {
+    if (!buffer || !window.SceneManager) return;
+    const scenes = SceneManager.getScenes();
+    let total = 0, done = 0, skipped = 0;
+    scenes.forEach((s, i) => {
+      if (s.audioStart == null) { skipped++; return; }
+      const layers = SceneManager.layersOf ? SceneManager.layersOf(i) : null;
+      const n = _spreadLayers(layers, s.audioStart, _segEndFor(i, scenes));
+      if (n) { total += n; done++; }
+    });
+    if (!done) {
+      showToast(skipped ? 'Épingle d\'abord tes scènes sur la voix (✨ Scènes), puis relance' : 'Aucun calque à caler', null, 4500);
+      return;
+    }
+    if (typeof renderLayerList === 'function') renderLayerList();
+    _renderPins();
+    scheduleAutoSave();
+    let msg = `✨ ${total} dessin${total > 1 ? 's' : ''} calé${total > 1 ? 's' : ''} sur ${done} scène${done > 1 ? 's' : ''}`;
+    if (skipped) msg += ` · ${skipped} non épinglée${skipped > 1 ? 's' : ''}`;
+    showToast(msg, null, 4500);
   }
 
   // ── Auto-pins: put scene markers on detected speech pauses ────────────────
@@ -915,6 +953,13 @@
     autoL.title = 'Répartit les dessins de la scène courante sur les phrases de son segment de voix (Départ + Durée réglés automatiquement)';
     autoL.addEventListener('click', autoLayerSync);
     transportEl.appendChild(autoL);
+
+    const autoAll = document.createElement('button');
+    autoAll.className = 'ss-btn';
+    autoAll.textContent = '✨ Tout';
+    autoAll.title = 'Cale les dessins de TOUTES les scènes épinglées sur la voix en un clic (chaque calque de chaque scène)';
+    autoAll.addEventListener('click', autoLayerSyncAll);
+    transportEl.appendChild(autoAll);
 
     // Voice volume
     const vol = document.createElement('label');
@@ -1154,7 +1199,7 @@
   window.AudioVO = {
     hasAudio, duration, time, isPlaying,
     playheadTime: () => (isPlaying() ? time() : pausedAt),
-    autoLayerSync,
+    autoLayerSync, autoLayerSyncAll,
     startPlayback, stopPlayback, pausePlayback, seekTo,
     waitUntil, waitUntilEnd,
     createExportStream,

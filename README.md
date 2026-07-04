@@ -24,7 +24,8 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 - **✨ Scènes**: detects the pauses in your narration and places one scene marker per pause
 - **✨ Calques**: spreads the current scene's drawings over the speech bursts inside its voice segment — sets each layer's *Départ* and *Durée* automatically so drawings land on the words
 - **🎯 Caler au playhead** (on each layer): listen, drop the playhead on the exact word, click — the drawing now starts precisely there (relative to the scene's marker)
-- **Layer markers on the waveform** (violet): see where each drawing of the current scene falls on the voice, drag to fine-tune, double-click to clear
+- **Layer markers for EVERY scene on the waveform**: each drawing of each scene shows where it starts on the voice (colored by scene, current scene brighter). Drag any of them — even a drawing from another scene — to retime it without leaving the current scene; double-click clears it
+- **✨ Tout**: one click times every layer of every pinned scene across the whole voice-over
 - **Colored segments** on the waveform show each scene's time slot, with its measured drawing time — and a ⚠ hatched warning when a scene draws longer than its slot
 - **Audition anywhere**: click a pin (or Shift+click the waveform) to listen from that point
 - During playback and export **the audio is the master clock**: each pinned scene starts exactly on its marker (a scene still drawing gets snapped to its final frame so the narration never drifts)
