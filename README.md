@@ -16,8 +16,11 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 - `PageUp` / `PageDown` to jump between scenes
 
 ### 🎙 Voice-over with real sync
-- Import your narration (mp3, wav, ogg, m4a…) — waveform appears under the scene strip
-- **Click the waveform to pin the current scene to that moment** of the audio; drag pins to adjust, double-click to unpin
+- Import your narration (mp3, wav, ogg, m4a…) — a **real audio timeline** appears under the scene strip: 66px waveform, time ruler, `Ctrl+wheel` horizontal zoom (×1–×16) with scroll
+- **Transport**: play/pause with resume, stop, back-to-start, live time readout, click/drag the waveform to seek & scrub
+- **✂ Trim**: cut the head/tail of the narration (Début/Fin in seconds) — the video timeline starts at the trimmed point, in preview and exports
+- **Voice volume** (0–150%), applied in preview, WebM and MP4
+- **📍 Pin the current scene at the playhead**; drag pins to adjust, double-click to unpin, click a pin to place the playhead there
 - **✨ Auto-sync**: detects the pauses in your narration and places one scene marker per pause
 - **Colored segments** on the waveform show each scene's time slot, with its measured drawing time — and a ⚠ hatched warning when a scene draws longer than its slot
 - **Audition anywhere**: click a pin (or Shift+click the waveform) to listen from that point
@@ -50,7 +53,7 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 
 ### 📱 TikTok toolkit
 - **Safe-zone overlay** (📱): shows the areas TikTok covers with the caption, action rail and username — never put text there
-- **🎵 Background music track**: loops under the whole video, volume slider, and **auto-ducking** (music dips while the voice-over speaks) — mixed into both WebM and MP4 exports
+- **🎵 Background music track**: loops under the whole video, volume slider, **auto-ducking** (music dips while the voice-over speaks), **start offset** (skip the track's intro) and **fade-in** — mixed into both WebM and MP4 exports
 - **Manga text presets**: 💥 Onomatopée, 📢 Titre, 💬 Dialogue, ✏️ Narration — one click sets font/size/color and arms text placement
 - **😀 Emoji stickers**: pick from a manga-flavored grid (or type any emoji) — lands as a normal layer that gets hand-drawn like the rest
 - Exported files are named after the project (`mon-projet-2026-….mp4`)
