@@ -226,7 +226,10 @@
     if (i < 0 || i >= scenes.length) return;
     if (i === cur && !opts.force) { renderStrip(); return; }
 
-    if (!opts.fromPlayback) captureCurrent();
+    if (!opts.fromPlayback) {
+      captureCurrent();
+      if (window._stopSoloVoice) window._stopSoloVoice(); // manual switch ends the solo voice preview
+    }
     const s = scenes[i];
     await _hydrateScene(s);
     if (!s.live) s.live = { layers: [], groups: [], selectedLayerId: null, canvasBg: state.canvasBg };

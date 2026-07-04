@@ -1040,6 +1040,63 @@
   }
 
   // ═════════════════════════════════════════════════════════════════════════
+  // 8. VOICE FOLLOWS PLAY — the top Play button also drives the voice-over.
+  // Playing the current scene starts the audio at the scene's marker (or 0),
+  // pause/resume keep audio and drawing together. "Play all" keeps owning
+  // the audio itself, so we stay out of the way during sequences.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  const _solo = { active: false, at: 0 };
+  const _inSequence = () => !!(window.SceneManager && SceneManager.isSequenceActive());
+  const _hasVoice = () => !!(window.AudioVO && AudioVO.hasAudio());
+
+  const _origGenerate = window.generate;
+  window.generate = function () {
+    _origGenerate.apply(this, arguments);
+    if (!_hasVoice() || _inSequence() || state.recording) return;
+    const sc = window.SceneManager ? SceneManager.getScenes()[SceneManager.currentIndex()] : null;
+    const off = (sc && sc.audioStart != null) ? sc.audioStart : 0;
+    AudioVO.startPlayback({ preview: true, offset: off });
+    _solo.active = true;
+    _solo.at = off;
+  };
+
+  const _origTogglePlay = window.togglePlay;
+  window.togglePlay = function () {
+    const wasPlaying = state.playing;
+    const wasDone = state.done;
+    _origTogglePlay.apply(this, arguments);
+    if (wasDone || !_solo.active || !_hasVoice() || _inSequence()) return;
+    if (wasPlaying && !state.playing) {
+      // paused → remember where the voice was and stop it
+      _solo.at = AudioVO.time();
+      AudioVO.stopPlayback();
+    } else if (!wasPlaying && state.playing) {
+      AudioVO.startPlayback({ preview: true, offset: _solo.at || 0 });
+    }
+  };
+
+  const _origResetAnim = window.resetAnim;
+  window.resetAnim = function () {
+    _origResetAnim.apply(this, arguments);
+    // Direct user reset stops the solo voice (generate() restarts it right after
+    // when the reset is part of a replay, so nothing is lost in that path).
+    if (_solo.active && !_inSequence() && !state.playing) {
+      AudioVO.stopPlayback();
+      _solo.active = false;
+    }
+  };
+
+  // Switching scene by hand stops the solo voice (called from scenes.js
+  // activate() — the strip's internal calls don't go through SceneManager.*)
+  window._stopSoloVoice = () => {
+    if (_solo.active && !_inSequence()) {
+      AudioVO.stopPlayback();
+      _solo.active = false;
+    }
+  };
+
+  // ═════════════════════════════════════════════════════════════════════════
   // STYLES + INIT
   // ═════════════════════════════════════════════════════════════════════════
 
