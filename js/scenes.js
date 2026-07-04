@@ -25,6 +25,7 @@
   let scenes = [];   // [{id, name, audioStart, hold, thumb, live:{layers,groups,selectedLayerId,canvasBg}|null, pending:serialized|null}]
   let cur = 0;
   let idc = 0;
+  let _dragSceneIdx = null; // strip drag & drop reorder
 
   // Playback sequence state (Play all / export)
   let _seq = { active: false, forExport: false, idx: 0, done: false };
@@ -320,6 +321,20 @@
     if (window.AudioVO) AudioVO.onScenesChanged();
   }
 
+  // Drag & drop reorder in the strip
+  function _reorderScene(from, to) {
+    if (from === to || from < 0 || to < 0 || from >= scenes.length || to >= scenes.length) return;
+    captureCurrent();
+    const curScene = scenes[cur];
+    const [s] = scenes.splice(from, 1);
+    scenes.splice(to, 0, s);
+    cur = scenes.indexOf(curScene);
+    renderStrip();
+    scheduleAutoSave();
+    if (window.AudioVO) AudioVO.onScenesChanged();
+    showToast(`« ${s.name} » déplacée en position ${to + 1}`);
+  }
+
   function renameScene(i) {
     const name = prompt('Scene name:', scenes[i].name);
     if (name && name.trim()) { scenes[i].name = name.trim(); renderStrip(); scheduleAutoSave(); if (window.AudioVO) AudioVO.onScenesChanged(); }
@@ -474,14 +489,17 @@
     if (_seq.active) return;
     captureCurrent();
     _refreshCurrentThumb();
-    _seq = { active: true, forExport: !!opts.forExport, idx: 0, done: false };
+    const from = Math.max(0, Math.min(scenes.length - 1, opts.from || 0));
+    _seq = { active: true, forExport: !!opts.forExport, idx: from, done: false };
     _syncPlayAllBtn();
 
     const hasAudio = !!(window.AudioVO && AudioVO.hasAudio());
     try {
-      if (hasAudio) await AudioVO.startPlayback({ forExport: !!opts.forExport });
+      // "Play from here": start the audio clock at that scene's marker
+      const startOffset = (hasAudio && from > 0 && scenes[from].audioStart != null) ? scenes[from].audioStart : 0;
+      if (hasAudio) await AudioVO.startPlayback({ forExport: !!opts.forExport, offset: startOffset });
 
-      for (let i = 0; i < scenes.length; i++) {
+      for (let i = from; i < scenes.length; i++) {
         if (!_seq.active) return;
         _seq.idx = i;
         const marker = scenes[i].audioStart;
@@ -701,17 +719,15 @@
         ${s.transition && s.transition !== 'cut' ? `<div class="ss-thumb-trans" title="Transition: ${s.transition}">${s.transition === 'fade' ? '◐' : s.transition === 'slide' ? '⇄' : '◨'}</div>` : ''}
         <div class="ss-thumb-name">${s.name}</div>
         <div class="ss-thumb-actions">
-          <button title="Scene settings" data-act="cfg">⚙</button>
-          <button title="Move left" data-act="left">◀</button>
-          <button title="Move right" data-act="right">▶</button>
-          <button title="Duplicate" data-act="dup">⧉</button>
-          <button title="Delete" data-act="del">✕</button>
+          <button title="Réglages de la scène" data-act="cfg">⚙</button>
+          <button title="Lire à partir d'ici" data-act="playfrom">▶</button>
+          <button title="Dupliquer" data-act="dup">⧉</button>
+          <button title="Supprimer" data-act="del">✕</button>
         </div>`;
       el.addEventListener('click', e => {
         const act = e.target?.dataset?.act;
         if (act === 'cfg') { _openSceneSettings(i, el); return; }
-        if (act === 'left') { moveScene(i, -1); return; }
-        if (act === 'right') { moveScene(i, 1); return; }
+        if (act === 'playfrom') { if (!_seq.active) playAll({ from: i }); return; }
         if (act === 'dup') { duplicateScene(i); return; }
         if (act === 'del') { deleteScene(i); return; }
         if (!_seq.active) activate(i);
@@ -719,6 +735,28 @@
       el.addEventListener('dblclick', e => {
         if (!e.target?.dataset?.act) renameScene(i);
       });
+      // Drag & drop to reorder
+      el.draggable = true;
+      el.addEventListener('dragstart', e => {
+        if (_seq.active) { e.preventDefault(); return; }
+        _dragSceneIdx = i;
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      el.addEventListener('dragover', e => {
+        if (_dragSceneIdx == null || _dragSceneIdx === i) return;
+        e.preventDefault();
+        el.style.outline = '2px dashed var(--accent2)';
+        el.style.outlineOffset = '2px';
+      });
+      el.addEventListener('dragleave', () => { el.style.outline = ''; });
+      el.addEventListener('drop', e => {
+        e.preventDefault();
+        el.style.outline = '';
+        if (_dragSceneIdx == null || _dragSceneIdx === i) return;
+        _reorderScene(_dragSceneIdx, i);
+        _dragSceneIdx = null;
+      });
+      el.addEventListener('dragend', () => { _dragSceneIdx = null; });
       thumbs.appendChild(el);
     });
     row.appendChild(thumbs);
@@ -733,10 +771,25 @@
     const play = document.createElement('button');
     play.className = 'ss-btn ss-playall';
     play.id = 'ss-playall-btn';
-    play.title = 'Play every scene in order (with voice-over if loaded)';
+    play.title = 'Lire toutes les scènes dans l\'ordre (avec la voix off si chargée) — ▶ sur une vignette pour partir de là';
     play.addEventListener('click', () => { _seq.active ? stopPlayAll() : playAll(); });
     row.appendChild(play);
     _syncPlayAllBtn();
+
+    // Estimated total video duration
+    const est = document.createElement('div');
+    est.id = 'ss-total-dur';
+    est.style.cssText = 'flex-shrink:0;font-size:10px;color:#777;font-variant-numeric:tabular-nums;align-self:center;min-width:56px;text-align:center;';
+    const fmt = t => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, '0')}`;
+    if (window.AudioVO && AudioVO.hasAudio() && AudioVO.duration() > 0) {
+      est.textContent = `🎬 ${fmt(AudioVO.duration())}`;
+      est.title = 'Durée de la vidéo = durée de la voix off (horloge maîtresse)';
+    } else {
+      const total = scenes.reduce((a, s) => a + (s._lastDur ?? 3) + (s.hold ?? DEFAULT_HOLD), 0);
+      est.textContent = `≈ ${fmt(total)}`;
+      est.title = 'Durée estimée (scènes non encore mesurées comptées 3s) — lance ▶ Play all pour une mesure exacte';
+    }
+    row.appendChild(est);
 
     if (window.AudioVO) AudioVO.onScenesChanged();
   }

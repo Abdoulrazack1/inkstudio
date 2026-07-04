@@ -5251,6 +5251,34 @@ document.addEventListener('keydown', e => {
     return;
   }
 
+  // Arrow keys — nudge the selected layer 1px (Shift = 10px)
+  if (!mod && !typing && !state.playing &&
+      (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    const selN = getSelectedLayer();
+    if (selN) {
+      e.preventDefault();
+      // One undo snapshot per burst of nudges, not per keypress
+      if (!window._lastNudgeAt || performance.now() - window._lastNudgeAt > 1200) pushUndoSnapshot();
+      window._lastNudgeAt = performance.now();
+      const step = e.shiftKey ? 10 : 1;
+      if (e.key === 'ArrowLeft')  selN.x -= step;
+      if (e.key === 'ArrowRight') selN.x += step;
+      if (e.key === 'ArrowUp')    selN.y -= step;
+      if (e.key === 'ArrowDown')  selN.y += step;
+      redrawLayersOnCanvas();
+      drawSelectionHandles();
+      scheduleAutoSave();
+      return;
+    }
+  }
+
+  // Ctrl+Arrow up/down — move the selected layer through the stack
+  if (mod && !typing && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && state.selectedLayerId) {
+    e.preventDefault();
+    moveLayerZ(state.selectedLayerId, e.key === 'ArrowUp' ? 1 : -1);
+    return;
+  }
+
   // Delete / Backspace — remove selected layer (no modifier, not typing)
   if ((e.key === 'Delete' || e.key === 'Backspace') && !mod && !typing) {
     if (state.selectedLayerId) {
@@ -6552,6 +6580,21 @@ function setLayerPos(id, prop, val) {
   drawSelectionHandles();
   scheduleAutoSave();
 }
+// Move a layer up/down the visual stack (dir +1 = forward/on top)
+function moveLayerZ(id, dir) {
+  const idx = state.layers.findIndex(l => l.id === id);
+  if (idx < 0) return;
+  const j = idx + dir;
+  if (j < 0 || j >= state.layers.length) return;
+  pushUndoSnapshot();
+  const [l] = state.layers.splice(idx, 1);
+  state.layers.splice(j, 0, l);
+  renderLayerList();
+  redrawLayersOnCanvas();
+  drawSelectionHandles();
+  scheduleAutoSave();
+}
+
 function setLayerOrder(id, val) {
   pushUndoSnapshot();
   const l = getLayerById(id); if(!l) return;
@@ -6830,6 +6873,39 @@ function drawSelectionHandles() {
     sctx.beginPath(); sctx.arc(cx2,cy2,4,0,Math.PI*2); sctx.fill();
     sctx.strokeStyle='#6c63ff'; sctx.lineWidth=1.5; sctx.stroke();
   });
+  // Smart guides while dragging (canvas center/edges & other layers)
+  if (_interact && _snapGuides.length) {
+    sctx.save();
+    sctx.strokeStyle = '#e11d8f';
+    sctx.lineWidth = Math.max(1.5, state.canvasW / 900);
+    sctx.setLineDash([7, 5]);
+    _snapGuides.forEach(g => {
+      sctx.beginPath();
+      if (g.type === 'v') { sctx.moveTo(g.pos, 0); sctx.lineTo(g.pos, state.canvasH); }
+      else { sctx.moveTo(0, g.pos); sctx.lineTo(state.canvasW, g.pos); }
+      sctx.stroke();
+    });
+    sctx.restore();
+  }
+  // Live readout while moving/resizing
+  if (_interact && (_interact.type === 'move' || _interact.type === 'resize')) {
+    const txt = _interact.type === 'move'
+      ? `${Math.round(x)}, ${Math.round(y)}`
+      : `${Math.round(w)} × ${Math.round(h)}`;
+    sctx.save();
+    const fs = Math.max(13, Math.round(state.canvasW / 70));
+    sctx.font = `600 ${fs}px "DM Sans", sans-serif`;
+    const tw = sctx.measureText(txt).width;
+    const bx = Math.max(4, Math.min(state.canvasW - tw - 18, x));
+    const by = Math.max(4, y - fs - 14);
+    sctx.fillStyle = 'rgba(26,26,26,0.85)';
+    sctx.fillRect(bx, by, tw + 14, fs + 8);
+    sctx.fillStyle = '#fff';
+    sctx.textBaseline = 'middle';
+    sctx.textAlign = 'left';
+    sctx.fillText(txt, bx + 7, by + (fs + 8) / 2 + 1);
+    sctx.restore();
+  }
   // Rotation knob above the top edge (drag to rotate, Shift = 15° steps)
   const kx = x + w/2, ky = y - 34;
   sctx.strokeStyle='#6c63ff'; sctx.lineWidth=1.5;
@@ -6850,8 +6926,39 @@ function _hitRotateKnob(px, py, layer) {
 }
 
 // ── Canvas pointer interaction: move + resize ──
-let _interact = null; // {type:'move'|'resize', corner, startX, startY, origLayer}
+let _interact = null; // {type:'move'|'resize'|'rotate', corner, startX, startY, origLayer}
 let _scale = 1; // canvas CSS scale
+let _snapGuides = []; // smart guides shown while dragging [{type:'v'|'h', pos}]
+
+// Magnetic snapping: canvas edges/center + other layers' edges/centers.
+// Hold Alt to disable.
+function _applySnap(nx, ny, layer) {
+  const TH = 8;
+  const W = state.canvasW, H = state.canvasH;
+  const vTargets = [0, W / 2, W];
+  const hTargets = [0, H / 2, H];
+  state.layers.forEach(l => {
+    if (l === layer || l.visible === false) return;
+    vTargets.push(l.x, l.x + l.w / 2, l.x + l.w);
+    hTargets.push(l.y, l.y + l.h / 2, l.y + l.h);
+  });
+  const myV = [0, layer.w / 2, layer.w];
+  const myH = [0, layer.h / 2, layer.h];
+  const guides = [];
+  let bestV = null;
+  myV.forEach(off => vTargets.forEach(t => {
+    const d = t - (nx + off);
+    if (Math.abs(d) <= TH && (!bestV || Math.abs(d) < Math.abs(bestV.d))) bestV = { d, t };
+  }));
+  if (bestV) { nx += bestV.d; guides.push({ type: 'v', pos: bestV.t }); }
+  let bestH = null;
+  myH.forEach(off => hTargets.forEach(t => {
+    const d = t - (ny + off);
+    if (Math.abs(d) <= TH && (!bestH || Math.abs(d) < Math.abs(bestH.d))) bestH = { d, t };
+  }));
+  if (bestH) { ny += bestH.d; guides.push({ type: 'h', pos: bestH.t }); }
+  return { x: nx, y: ny, guides };
+}
 
 function getCanvasScale() {
   const rect = canvas.getBoundingClientRect();
@@ -6961,8 +7068,16 @@ selectCanvas.addEventListener('mousemove', e => {
   }
   const dx = x - _interact.startX, dy = y - _interact.startY;
   if (_interact.type === 'move') {
-    sel.x = _interact.orig.x + dx;
-    sel.y = _interact.orig.y + dy;
+    let nx = _interact.orig.x + dx, ny = _interact.orig.y + dy;
+    if (!e.altKey) {
+      const snapped = _applySnap(nx, ny, sel);
+      nx = snapped.x; ny = snapped.y;
+      _snapGuides = snapped.guides;
+    } else {
+      _snapGuides = [];
+    }
+    sel.x = nx;
+    sel.y = ny;
   } else {
     // Resize
     const o = _interact.orig;
@@ -7005,6 +7120,7 @@ document.addEventListener('mouseup', () => {
   const wasInteract = _interact.type;
   const orig = _interact.orig;
   _interact = null;
+  _snapGuides = [];
   if (wasInteract === 'rotate') {
     if (sel && window.RotateKit) {
       // Finalize: rotate GIF frames, refresh the panel, save

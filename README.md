@@ -31,7 +31,14 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 ### 🎬 Editing (montage)
 - **Transitions between scenes**: cut, fade, slide, wipe — visible in Play all and baked into the export
 - **Per-scene settings popover (⚙ on a thumbnail)**: rename, hold duration, transition, precise voice-over start time, listen-from-here
+- **Drag & drop the thumbnails** to reorder scenes · **▶ on a thumbnail = play from that scene** (audio seeks to its marker)
+- **Estimated total video duration** next to Play all (voice-over duration when a track is loaded)
 - Measured scene durations shown on thumbnails after each playback
+
+### 🎯 Precision canvas
+- **Magnetic smart guides** while dragging: layers snap to the canvas center/edges and to other layers' edges & centers (dashed pink guides, hold `Alt` to disable)
+- **Live readout** while dragging (`x, y`) and resizing (`w × h`)
+- **Arrow keys nudge** the selected layer 1px (`Shift` = 10px) · **`Ctrl+↑/↓` moves it through the layer stack**
 
 ### 🎨 Colors & fonts
 - 18 text fonts (10 new handwriting/display Google Fonts: Kalam, Amatic SC, Shadows Into Light, Gloria Hallelujah, Indie Flower, Architects Daughter, Bangers, Pacifico, Bebas Neue, Courgette)
