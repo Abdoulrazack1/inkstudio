@@ -6526,12 +6526,17 @@ function _buildLayerItem(layer) {
         <button onclick="event.stopPropagation();RotateKit.rotateBy(${layer.id},90)" title="+90°" style="cursor:pointer;padding:3px 7px;">↻</button>
       </div>
       <div class="section-label" style="margin-top:2px" title="Départ : le dessin attend cette seconde (depuis le début de la scène) avant de commencer. Durée : temps exact du dessin — coupé net s'il est trop lent, maintenu s'il finit en avance.">Timing (s)</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;font-size:10px;color:var(--muted);margin-bottom:10px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;font-size:10px;color:var(--muted);margin-bottom:6px;">
         <div>⏱ Départ <input type="number" min="0" step="0.1" placeholder="auto" style="width:100%;margin-top:3px" value="${layer.startAt ?? ''}"
           onclick="event.stopPropagation()" onchange="event.stopPropagation();setLayerStartAt(${layer.id},this.value)"></div>
         <div>⏳ Durée <input type="number" min="0" step="0.1" placeholder="auto" style="width:100%;margin-top:3px" value="${layer.drawFor ?? ''}"
           onclick="event.stopPropagation()" onchange="event.stopPropagation();setLayerDrawFor(${layer.id},this.value)"></div>
       </div>
+      <button onclick="event.stopPropagation();setLayerStartAtPlayhead(${layer.id})"
+        title="Fait démarrer ce dessin exactement à la position du playhead sur la voix off. Écoute, mets le playhead sur le mot voulu, puis clique ici."
+        style="width:100%;margin-bottom:10px;padding:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border-hi);border-radius:6px;background:var(--panel);color:var(--text);display:flex;align-items:center;justify-content:center;gap:5px;">
+        🎯 Caler au playhead voix
+      </button>
       <div class="section-label" style="margin-top:2px">Position &amp; Size</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;font-size:10px;color:var(--muted)">
         <div>X <input type="number" style="width:100%;margin-top:3px" value="${Math.round(layer.x)}" onchange="setLayerPos(${layer.id},'x',+this.value)"></div>
@@ -6606,13 +6611,36 @@ function setLayerStartAt(id, val) {
   const l = getLayerById(id); if (!l) return;
   const n = parseFloat(val);
   l.startAt = (val === '' || isNaN(n) || n <= 0) ? null : Math.round(n * 10) / 10;
+  if (window.AudioVO) AudioVO.onScenesChanged();
   scheduleAutoSave();
 }
 function setLayerDrawFor(id, val) {
   const l = getLayerById(id); if (!l) return;
   const n = parseFloat(val);
   l.drawFor = (val === '' || isNaN(n) || n <= 0) ? null : Math.round(n * 10) / 10;
+  if (window.AudioVO) AudioVO.onScenesChanged();
   scheduleAutoSave();
+}
+// Set a layer's "Départ" from the current voice playhead, relative to the
+// scene's own voice marker (so the drawing lands exactly where you heard it).
+function setLayerStartAtPlayhead(id) {
+  const l = getLayerById(id); if (!l) return;
+  if (!window.AudioVO || !AudioVO.hasAudio()) {
+    showToast('Importe d\'abord une voix off, puis place le playhead sur le mot voulu');
+    return;
+  }
+  const playT = AudioVO.playheadTime();
+  let segStart = 0;
+  if (window.SceneManager) {
+    const s = SceneManager.getScenes()[SceneManager.currentIndex()];
+    if (s && s.audioStart != null) segStart = s.audioStart;
+  }
+  const rel = Math.max(0, Math.round((playT - segStart) * 10) / 10);
+  l.startAt = rel === 0 ? null : rel;
+  renderLayerList();
+  if (window.AudioVO) AudioVO.onScenesChanged();
+  scheduleAutoSave();
+  showToast(`« ${l.name} » démarre à ${playT.toFixed(1)}s de la voix (Départ ${rel}s dans la scène)`);
 }
 function setLayerOpacity(id, val) {
   pushUndoSnapshot();
