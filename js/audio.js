@@ -837,6 +837,90 @@
     showToast(msg, null, 4500);
   }
 
+  // ── Remove long silences from the voice (tightens the edit) ───────────────
+
+  function _bufferToWavDataURL(buf) {
+    const ch = buf.numberOfChannels, sr = buf.sampleRate, n = buf.length;
+    const out = new DataView(new ArrayBuffer(44 + n * ch * 2));
+    const w = (o, s) => { for (let i = 0; i < s.length; i++) out.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, 'RIFF'); out.setUint32(4, 36 + n * ch * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+    out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, ch, true);
+    out.setUint32(24, sr, true); out.setUint32(28, sr * ch * 2, true);
+    out.setUint16(32, ch * 2, true); out.setUint16(34, 16, true);
+    w(36, 'data'); out.setUint32(40, n * ch * 2, true);
+    let off = 44;
+    for (let i = 0; i < n; i++) {
+      for (let c = 0; c < ch; c++) {
+        const v = Math.max(-1, Math.min(1, buf.getChannelData(c)[i]));
+        out.setInt16(off, v * 32767, true); off += 2;
+      }
+    }
+    let bin = '';
+    const bytes = new Uint8Array(out.buffer);
+    for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+    return 'data:audio/wav;base64,' + btoa(bin);
+  }
+
+  function _remapTime(t, ranges) {
+    let acc = 0;
+    for (const [a, b] of ranges) {
+      if (t < a) return acc;
+      if (t <= b) return acc + (t - a);
+      acc += (b - a);
+    }
+    return acc;
+  }
+
+  async function removeSilences() {
+    if (!buffer) return;
+    const speech = _speechIntervals();
+    if (!speech.length) { showToast('Aucune parole détectée dans la voix'); return; }
+    if (!confirm('Retirer les longs silences de la voix off ? Les marqueurs de scènes seront recalés en conséquence.')) return;
+
+    const sr = buffer.sampleRate;
+    const ch = buffer.numberOfChannels;
+    const pad = 0.12; // keep 120 ms around each speech burst
+    const ranges = [];
+    speech.forEach(([a, b]) => {
+      const s = Math.max(0, a - pad), e = Math.min(buffer.duration, b + pad);
+      if (ranges.length && s <= ranges[ranges.length - 1][1]) ranges[ranges.length - 1][1] = e;
+      else ranges.push([s, e]);
+    });
+    const keptDur = ranges.reduce((sum, [a, b]) => sum + (b - a), 0);
+    if (keptDur < 0.3 || buffer.duration - keptDur < 0.3) { showToast('Pas de silence assez long à retirer'); return; }
+
+    const len = Math.max(1, Math.round(keptDur * sr));
+    const nb = _ctx().createBuffer(ch, len, sr);
+    for (let c = 0; c < ch; c++) {
+      const src = buffer.getChannelData(c), dst = nb.getChannelData(c);
+      let off = 0;
+      ranges.forEach(([a, b]) => {
+        const s = Math.round(a * sr), e = Math.round(b * sr);
+        dst.set(src.subarray(s, e), off);
+        off += (e - s);
+      });
+    }
+
+    // Recale scene markers onto the shortened timeline
+    if (window.SceneManager) {
+      SceneManager.getScenes().forEach(s => {
+        if (s.audioStart != null) s.audioStart = Math.round(_remapTime(s.audioStart, ranges) * 10) / 10;
+      });
+    }
+
+    const removed = buffer.duration - keptDur;
+    origBuffer = nb;
+    dataURL = _bufferToWavDataURL(nb);
+    fileName = (fileName || 'voix').replace(/\.[^.]+$/, '') + ' (silences retirés).wav';
+    trimStart = 0; trimEnd = null; _speechCache = null;
+    _rebuildWorking();
+    stopPlayback(); pausedAt = 0;
+    _renderRow();
+    if (window.SceneManager) SceneManager.renderStrip();
+    scheduleAutoSave();
+    showToast(`Silences retirés — ${removed.toFixed(1)}s en moins (voix : ${_fmt(nb.duration)})`, null, 4500);
+  }
+
   // ── Auto-pins: put scene markers on detected speech pauses ────────────────
 
   function autoPins() {
@@ -1011,6 +1095,13 @@
     auto.title = 'Auto-sync : détecte les pauses de la narration et place un marqueur de scène par pause';
     auto.addEventListener('click', autoPins);
     transportEl.appendChild(auto);
+
+    const desil = document.createElement('button');
+    desil.className = 'ss-btn';
+    desil.textContent = '✂ Silences';
+    desil.title = 'Retire les longs silences de la voix off pour resserrer le montage (les marqueurs de scènes sont recalés)';
+    desil.addEventListener('click', removeSilences);
+    transportEl.appendChild(desil);
 
     const autoL = document.createElement('button');
     autoL.className = 'ss-btn';
@@ -1264,7 +1355,7 @@
   window.AudioVO = {
     hasAudio, duration, time, isPlaying,
     playheadTime: () => (isPlaying() ? time() : pausedAt),
-    autoLayerSync, autoLayerSyncAll,
+    autoLayerSync, autoLayerSyncAll, removeSilences,
     startPlayback, stopPlayback, pausePlayback, seekTo,
     waitUntil, waitUntilEnd,
     createExportStream,

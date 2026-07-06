@@ -83,6 +83,15 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 - Pick **color, thickness and angle** before placing — and change them **after** placement too (Forme section on the layer): the shape re-renders with the exact same strokes
 - Shapes are normal layers: they get hand-drawn by the animation, support timing (départ/durée), flip, duplicate, and persist with the project
 
+### 🏭 Production tools (`js/pro.js`)
+- **Platform export presets**: TikTok / Reels / Shorts (9:16), YouTube (16:9), Square (1:1) — one click sets ratio, resolution and safe-zone
+- **Framerate** 24/30/60 fps and **custom bitrate** (Mbps) in the export banner
+- **🏷 Watermark / logo**: upload a logo, drag it on the canvas, set size/opacity — it shows on every scene and is baked into the export (stored locally)
+- **Custom font import** (`.ttf/.otf/.woff/.woff2`) added straight to the text font picker · **SVG import** as a layer
+- **✂ Silences**: removes the long silences from the voice-over and re-times the scene markers accordingly (tighter edit, no re-recording)
+- **Project search** in the Projects modal · **⭐ Checkpoints**: save named, timestamped copies of a project to roll back to later
+- **Auto text-style suggestion**: type an ALL-CAPS onomatopoeia (BOOM!) and InkStudio offers the 💥 Bangers style in one click
+
 ### 🧰 Layer tools
 - **⇋ / ⇅ flip** the selected layer (GIF frames flip too) · **⧉ duplicate** (`Ctrl+D`)
 - **⟳ Rotation** for every layer: drag the knob above the selection (Shift = 15° steps), or use the Rotation row in the layer card (±90, ±15, exact angle). Always re-rendered from the original image — no quality loss; shapes rotate as vectors, GIF frames rotate too
@@ -141,6 +150,7 @@ Open `http://localhost:3000` (or the port shown) in **Chrome or Edge** (best sup
 | `js/audio.js` | **InkStudio** — voice-over import, waveform, markers, AAC/stream muxing |
 | `js/extras.js` | **InkStudio** — portable project files, extra shortcuts |
 | `js/studio.js` | **InkStudio** — zoom/pan/focus, GIF engine, safe-zone, stickers, presets |
+| `js/pro.js` | **InkStudio** — export presets, watermark, font/SVG import, silences, checkpoints |
 | `electron/main.js` | **InkStudio** — desktop shell (internal static server + window) |
 
 ## 📜 License & credits

@@ -9605,7 +9605,8 @@ function recordWebM(progressText, progressBar) {
         medium: 4000000,
         low: 2000000
       };
-      const bitrate = qualityMap[state.exportQuality] || 4000000;
+      const bitrate = (state.exportBitrate > 0 ? state.exportBitrate * 1000000 : 0) || qualityMap[state.exportQuality] || 4000000;
+      const FPS_W = state.exportFPS || 30;
       
       // Codec selection
       const mimes = [
@@ -9626,7 +9627,7 @@ function recordWebM(progressText, progressBar) {
       state.recording = true;
       state.chunks = [];
       
-      const stream = rec.captureStream(30);
+      const stream = rec.captureStream(FPS_W);
 
       // InkStudio: mix the voice-over into the recorded stream
       if (window.AudioVO && AudioVO.hasAudio()) {
@@ -9668,6 +9669,7 @@ function recordWebM(progressText, progressBar) {
           rctx.drawImage(mainCanvas, 0, 0);
           rctx.drawImage(handCanvas, 0, 0);
         }
+        if (window.Watermark) Watermark.draw(rctx, state.canvasW, state.canvasH);
         requestAnimationFrame(syncLoop);
       })();
       
@@ -9734,8 +9736,8 @@ function recordMP4(progressText, progressBar) {
       }
 
       const qualityMap = { high: 8000000, medium: 4000000, low: 2000000 };
-      const bitrate    = qualityMap[state.exportQuality] || 4000000;
-      const FPS        = 30;
+      const bitrate    = (state.exportBitrate > 0 ? state.exportBitrate * 1000000 : 0) || qualityMap[state.exportQuality] || 4000000;
+      const FPS        = state.exportFPS || 30;
 
       // H.264 requires even dimensions — round up if necessary
       const W = state.canvasW % 2 === 0 ? state.canvasW : state.canvasW + 1;
@@ -9838,6 +9840,7 @@ function recordMP4(progressText, progressBar) {
           rctx.drawImage(mainCvs,   0, 0, state.canvasW, state.canvasH, 0, 0, W, H);
           rctx.drawImage(handCanvas, 0, 0, state.canvasW, state.canvasH, 0, 0, W, H);
         }
+        if (window.Watermark) Watermark.draw(rctx, W, H);
 
         const ts       = Math.round((frameCount / FPS) * 1_000_000); // microseconds
         const duration = Math.round(1_000_000 / FPS);
@@ -11333,5 +11336,6 @@ function obEnd() {
 <script src="js/audio.js"></script>
 <script src="js/extras.js"></script>
 <script src="js/studio.js"></script>
+<script src="js/pro.js"></script>
 </body>
 </html>
