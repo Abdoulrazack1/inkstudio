@@ -4,6 +4,8 @@
 
 InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWeb-App/Inkplainer-OS) (Apache-2.0). It keeps the excellent hand-drawn animation engine and adds what a real explainer-video workflow needs: **several canvases (scenes) per project** and an **imported voice-over track that drives the timing**, so what you say and what gets drawn appear together.
 
+> **Requires a desktop screen (≥ 1280px wide).** InkStudio is a canvas editor with side panels, drag controls, video recording and local storage — it is **not designed for mobile or tablet**. The packaged desktop app currently targets **Windows only** (Electron); macOS/Linux are not built yet. The browser version runs in any modern desktop Chromium/Chrome or Edge (MP4 export needs Chrome/Edge).
+
 ---
 
 ## ✨ What InkStudio adds over Inkplainer

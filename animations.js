@@ -23,8 +23,6 @@
 (function(window) {
   'use strict';
 
-  console.log('🎨 Loading Animation Engine...');
-
 function buildPresenceMap() {
   const cb = state.contentBounds;
   const W = cb.w, H = cb.h;
@@ -3633,7 +3631,5 @@ function setOutlineOpacity(val) {
     _tickSlot,
     _tickAllSlots,
   };
-
-  console.log('✓ Animation Engine loaded');
 
 })(window);

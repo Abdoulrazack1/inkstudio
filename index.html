@@ -3214,13 +3214,13 @@ input[type="number"]:focus { border-color: var(--accent); }
   </div>
 
   <div class="undo-redo-group">
-    <button class="undo-redo-btn" id="btn-undo" onclick="undo()" disabled title="Undo (Ctrl+Z)">
+    <button class="undo-redo-btn" id="btn-undo" onclick="undo()" disabled title="Undo (Ctrl+Z)" aria-label="Annuler (Ctrl+Z)">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>
       </svg>
       <span class="undo-badge" id="undo-badge"></span>
     </button>
-    <button class="undo-redo-btn" id="btn-redo" onclick="redo()" disabled title="Redo (Ctrl+Shift+Z)">
+    <button class="undo-redo-btn" id="btn-redo" onclick="redo()" disabled title="Redo (Ctrl+Shift+Z)" aria-label="Rétablir (Ctrl+Maj+Z)">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/>
       </svg>
@@ -3234,7 +3234,7 @@ input[type="number"]:focus { border-color: var(--accent); }
   </div>
   <div class="topbar-right">
     <span id="export-status-top"></span>
-    <button id="btn-export-top" onclick="openExportBanner()">
+    <button id="btn-export-top" onclick="openExportBanner()" aria-label="Exporter la vidéo">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Export Video
     </button>
@@ -3839,7 +3839,7 @@ input[type="number"]:focus { border-color: var(--accent); }
           <path d="M3.51 15a9 9 0 1 0 .49-4.29"/>
         </svg>
       </button>
-      <button class="play-btn" id="play-pause-btn" onclick="togglePlay()" disabled>
+      <button class="play-btn" id="play-pause-btn" onclick="togglePlay()" disabled aria-label="Lecture / pause (Espace)">
         <svg id="play-icon"  width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
         <svg id="pause-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
       </button>
@@ -4261,6 +4261,22 @@ input[type="number"]:focus { border-color: var(--accent); }
 </div>
 
 <script>
+// ═══════════════════════════════════════════
+// SECURITY — escape user-provided strings before they touch innerHTML.
+// Project/layer/scene/text names are user-controlled (and come from imported
+// .inkstudio.json files), so any of them interpolated into an HTML template
+// must be escaped to prevent stored XSS.
+// ═══════════════════════════════════════════
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+window.escapeHtml = escapeHtml;
+
 // ═══════════════════════════════════════════
 // INDEXEDDB PROJECT SYSTEM
 // ═══════════════════════════════════════════
@@ -4832,7 +4848,7 @@ function refreshProjectsList() {
             </svg>
           </div>
           <div class="project-info">
-            <div class="project-name">${project.name}</div>
+            <div class="project-name">${escapeHtml(project.name)}</div>
             <div class="project-meta">
               <span>${timeStr}</span>
               <span>•</span>
@@ -5015,6 +5031,10 @@ function _serializeState() {
 // ── Push a snapshot BEFORE a change is made ─────────────────────────────
 function pushUndoSnapshot() {
   if (_undoRestoring) return;
+  // A content edit supersedes a pending scene op as the "most recent" action,
+  // so Ctrl+Z targets this edit rather than the earlier structural change.
+  window._pendingSceneUndo = false;
+  window._pendingSceneRedo = false;
   const snap = _serializeState();
   _undoStack.push(snap);
   if (_undoStack.length > UNDO_MAX_DEPTH) _undoStack.shift();
@@ -5183,7 +5203,14 @@ function _applySnapshot(snap, label) {
 
 // ── Public undo / redo ───────────────────────────────────────────────────
 function undo() {
-  if (_undoRestoring || _undoStack.length === 0) return;
+  if (_undoRestoring) return;
+  // A structural scene op (add/delete/duplicate/reorder) is the most recent
+  // mutation → undo that first so an accidental scene delete is recoverable.
+  if (window._pendingSceneUndo && window.SceneManager && SceneManager.canUndoScene && SceneManager.canUndoScene()) {
+    SceneManager.undoSceneOp();
+    return;
+  }
+  if (_undoStack.length === 0) return;
   const current = _serializeState();
   _redoStack.push(current);
   const snap = _undoStack.pop();
@@ -5191,7 +5218,12 @@ function undo() {
 }
 
 function redo() {
-  if (_undoRestoring || _redoStack.length === 0) return;
+  if (_undoRestoring) return;
+  if (window._pendingSceneRedo && window.SceneManager && SceneManager.canRedoScene && SceneManager.canRedoScene()) {
+    SceneManager.redoSceneOp();
+    return;
+  }
+  if (_redoStack.length === 0) return;
   const current = _serializeState();
   _undoStack.push(current);
   const snap = _redoStack.pop();
@@ -6473,7 +6505,7 @@ function _buildLayerItem(layer) {
       <button class="layer-eye-btn${isHidden ? ' hidden' : ''}" onclick="event.stopPropagation();toggleLayerVisibility(${layer.id})" title="Toggle visibility">${eyeIcon}</button>
       <img class="layer-thumb" src="${layer.img.src}" alt="">
       <div style="flex:1;min-width:0">
-        <div class="layer-name" title="${layer.name}">${layer.name}</div>
+        <div class="layer-name" title="${escapeHtml(layer.name)}">${escapeHtml(layer.name)}</div>
       </div>
       <div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0" onclick="event.stopPropagation()">
         <span style="font-size:9px;color:var(--muted)">Order</span>
@@ -9365,7 +9397,6 @@ function loadCustomHandImages() {
       const img = new Image();
       img.onload = () => {
         customHandImages[handId][resolution] = img;
-        console.log(`✓ Loaded ${handId} at ${resolution}p`);
       };
       img.onerror = () => {
         console.error(`✗ Failed to load ${handId} at ${resolution}p from ${imageData.path}`);
@@ -9686,21 +9717,20 @@ function recordWebM(progressText, progressBar) {
 function recordMP4(progressText, progressBar) {
   return new Promise(async (resolve, reject) => {
     try {
-      // Dynamically import mp4-muxer as an ES module — vendored copy first
-      // (works offline, e.g. in the desktop app), CDN as fallback.
+      // Load mp4-muxer from the bundled copy only. No CDN fallback: the
+      // vendored module ships with the app (works offline), and pulling code
+      // from a third-party CDN at runtime would be an unnecessary
+      // supply-chain risk (no Subresource Integrity is possible on a dynamic
+      // import). If the local module is missing, MP4 export fails cleanly and
+      // the user can still export WebM.
       let Muxer, ArrayBufferTarget;
       try {
-        let mod;
-        try {
-          mod = await import('./js/vendor/mp4-muxer.mjs');
-        } catch (localErr) {
-          mod = await import('https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.mjs');
-        }
+        const mod = await import('./js/vendor/mp4-muxer.mjs');
         Muxer             = mod.Muxer             || mod.default?.Muxer;
         ArrayBufferTarget = mod.ArrayBufferTarget || mod.default?.ArrayBufferTarget;
         if (!Muxer) throw new Error('Muxer not found in module exports');
       } catch (importErr) {
-        throw new Error('Could not load mp4-muxer v5.2.2. (' + importErr.message + ')');
+        throw new Error('Impossible de charger mp4-muxer (module local). Exporte en WebM à la place. (' + importErr.message + ')');
       }
 
       const qualityMap = { high: 8000000, medium: 4000000, low: 2000000 };

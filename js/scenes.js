@@ -258,9 +258,84 @@
     renderStrip();
   }
 
+  // ── Scene-level undo/redo (add/delete/duplicate/reorder are undoable) ─────
+  // A separate stack from the per-scene content undo, so structural edits
+  // survive scene switches and an accidental scene delete is recoverable.
+
+  let _sceneUndo = [];
+  let _sceneRedo = [];
+  const SCENE_UNDO_MAX = 30;
+
+  function _snapshotScenes() {
+    captureCurrent();
+    return { scenes: serialize(), cur };
+  }
+
+  function _pushSceneUndo() {
+    _sceneUndo.push(_snapshotScenes());
+    if (_sceneUndo.length > SCENE_UNDO_MAX) _sceneUndo.shift();
+    _sceneRedo = [];
+    window._pendingSceneUndo = true;
+    window._pendingSceneRedo = false;
+  }
+
+  async function _restoreScenesSnapshot(snap) {
+    stopPlayAll();
+    _stopAnyAnim();
+    scenes = snap.scenes.map(d => {
+      const s = _newScene(d.name);
+      s.audioStart = (typeof d.audioStart === 'number') ? d.audioStart : null;
+      s.hold = (typeof d.hold === 'number') ? d.hold : DEFAULT_HOLD;
+      s.transition = d.transition || 'cut';
+      s._lastDur = (typeof d.lastDur === 'number') ? d.lastDur : null;
+      s.thumb = d.thumb || null;
+      s.pending = d;
+      return s;
+    });
+    cur = Math.max(0, Math.min(scenes.length - 1, snap.cur || 0));
+    const s = scenes[cur];
+    await _hydrateScene(s);
+    if (s.live) {
+      state.layers = s.live.layers;
+      state.groups = s.live.groups;
+      state.selectedLayerId = s.live.selectedLayerId;
+      state.canvasBg = s.live.canvasBg;
+    }
+    scenes[cur].pending = null;
+    _applyBgToUI(state.canvasBg);
+    renderLayerList();
+    redrawLayersOnCanvas();
+    clearUndoHistory();
+    scenes.forEach(sc => { if (sc.pending) _hydrateScene(sc).then(renderStrip); });
+    renderStrip();
+    if (window.AudioVO) AudioVO.onScenesChanged();
+    scheduleAutoSave();
+  }
+
+  async function undoSceneOp() {
+    if (!_sceneUndo.length) return false;
+    _sceneRedo.push(_snapshotScenes());
+    await _restoreScenesSnapshot(_sceneUndo.pop());
+    window._pendingSceneUndo = _sceneUndo.length > 0;
+    window._pendingSceneRedo = true;
+    showToast('Opération de scène annulée — Ctrl+Y pour rétablir');
+    return true;
+  }
+
+  async function redoSceneOp() {
+    if (!_sceneRedo.length) return false;
+    _sceneUndo.push(_snapshotScenes());
+    await _restoreScenesSnapshot(_sceneRedo.pop());
+    window._pendingSceneRedo = _sceneRedo.length > 0;
+    window._pendingSceneUndo = true;
+    showToast('Opération de scène rétablie');
+    return true;
+  }
+
   // ── Scene operations ──────────────────────────────────────────────────────
 
   function addScene() {
+    _pushSceneUndo();
     captureCurrent();
     const s = _newScene(`Scene ${scenes.length + 1}`);
     s.live = {
@@ -273,6 +348,7 @@
   }
 
   async function duplicateScene(i) {
+    _pushSceneUndo();
     captureCurrent();
     const src = scenes[i];
     await _hydrateScene(src);
@@ -294,7 +370,8 @@
   function deleteScene(i) {
     const s = scenes[i];
     const hasContent = (i === cur ? state.layers : (s.live?.layers || s.pending?.layers || [])).length > 0;
-    if (hasContent && !confirm(`Delete "${s.name}" and its layers?`)) return;
+    if (hasContent && !confirm(`Supprimer « ${s.name} » et ses calques ? (Ctrl+Z pour annuler)`)) return;
+    _pushSceneUndo();
     if (scenes.length === 1) {
       // Last scene: clear it instead of removing
       state.layers = []; state.groups = []; state.selectedLayerId = null;
@@ -317,6 +394,7 @@
   function moveScene(i, dir) {
     const j = i + dir;
     if (j < 0 || j >= scenes.length) return;
+    _pushSceneUndo();
     captureCurrent();
     const [s] = scenes.splice(i, 1);
     scenes.splice(j, 0, s);
@@ -329,6 +407,7 @@
   // Drag & drop reorder in the strip
   function _reorderScene(from, to) {
     if (from === to || from < 0 || to < 0 || from >= scenes.length || to >= scenes.length) return;
+    _pushSceneUndo();
     captureCurrent();
     const curScene = scenes[cur];
     const [s] = scenes.splice(from, 1);
@@ -722,7 +801,7 @@
         ${s.audioStart != null ? `<div class="ss-thumb-pin" title="Starts at ${s.audioStart.toFixed(1)}s on the voice-over">🎙 ${s.audioStart.toFixed(1)}s</div>` : ''}
         ${s._lastDur != null ? `<div class="ss-thumb-dur" title="Measured drawing time on last playback">~${s._lastDur.toFixed(1)}s</div>` : ''}
         ${s.transition && s.transition !== 'cut' ? `<div class="ss-thumb-trans" title="Transition: ${s.transition}">${s.transition === 'fade' ? '◐' : s.transition === 'slide' ? '⇄' : '◨'}</div>` : ''}
-        <div class="ss-thumb-name">${s.name}</div>
+        <div class="ss-thumb-name">${(window.escapeHtml || String)(s.name)}</div>
         <div class="ss-thumb-actions">
           <button title="Réglages de la scène" data-act="cfg">⚙</button>
           <button title="Lire à partir d'ici" data-act="playfrom">▶</button>
@@ -814,7 +893,7 @@
     pop.innerHTML = `
       <div class="ssp-title">Scene ${i + 1} settings</div>
       <label>Name
-        <input type="text" id="ssp-name" value="${s.name.replace(/"/g, '&quot;')}">
+        <input type="text" id="ssp-name" value="${(window.escapeHtml || String)(s.name)}">
       </label>
       <label>Hold after drawing (s)
         <input type="number" id="ssp-hold" min="0" max="30" step="0.1" value="${s.hold ?? DEFAULT_HOLD}">
@@ -893,6 +972,9 @@
     getScenes: () => scenes,
     isSequenceActive: () => _seq.active,
     colorFor: i => SCENE_COLORS[i % SCENE_COLORS.length],
+    undoSceneOp, redoSceneOp,
+    canUndoScene: () => _sceneUndo.length > 0,
+    canRedoScene: () => _sceneRedo.length > 0,
     // Layers of scene i (live for current, hydrated or pending for others).
     // Returns the actual layer objects so callers can mutate startAt/drawFor.
     layersOf: (i) => {

@@ -10,6 +10,8 @@
 (function () {
   'use strict';
 
+  const _esc = s => (window.escapeHtml || String)(s); // XSS-safe interpolation
+
   let actx = null;            // AudioContext (lazy)
   let origBuffer = null;      // decoded full voice track
   let buffer = null;          // WORKING buffer (trimmed) — the app's timeline
@@ -664,7 +666,7 @@
       seg.style.left = `${(s.audioStart / dur) * 100}%`;
       seg.style.width = `${(slot / dur) * 100}%`;
       seg.style.background = col + '2e';
-      seg.innerHTML = `<div class="vo-seg-label" style="color:${col}">${s.name}${overrun ? ` ⚠ ${s._lastDur.toFixed(1)}s > ${slot.toFixed(1)}s` : (s._lastDur != null ? ` · ${s._lastDur.toFixed(1)}s` : '')}</div>`;
+      seg.innerHTML = `<div class="vo-seg-label" style="color:${col}">${_esc(s.name)}${overrun ? ` ⚠ ${s._lastDur.toFixed(1)}s > ${slot.toFixed(1)}s` : (s._lastDur != null ? ` · ${s._lastDur.toFixed(1)}s` : '')}</div>`;
       if (overrun) seg.title = `"${s.name}" met ~${s._lastDur.toFixed(1)}s à se dessiner mais n'a que ${slot.toFixed(1)}s avant la scène suivante — il sera coupé. Augmente sa vitesse (ou fixe une Durée) ou déplace le marqueur suivant.`;
       waveWrap.appendChild(seg);
     });
@@ -721,7 +723,7 @@
       el.style.left = `${(t / dur) * 100}%`;
       el.style.setProperty('--lay-col', cue.color);
       el.title = `Scène ${cue.scene + 1} · « ${cue.name} » se dessine à ${t.toFixed(1)}s — glisse pour ajuster, double-clic pour retirer`;
-      el.innerHTML = `<div class="vo-lay-label" style="--lay-col:${cue.color}">${cue.scene + 1}·✏ ${cue.name}${cue.drawFor ? ` · ${cue.drawFor}s` : ''}</div>`;
+      el.innerHTML = `<div class="vo-lay-label" style="--lay-col:${cue.color}">${cue.scene + 1}·✏ ${_esc(cue.name)}${cue.drawFor ? ` · ${cue.drawFor}s` : ''}</div>`;
       const refresh = () => {
         _renderPins();
         if (cue.isCurrent && typeof renderLayerList === 'function') renderLayerList();

@@ -62,21 +62,78 @@
     }
   }
 
+  // ── Import validation: reject malformed / hostile project files ──────────
+  // A shared .inkstudio.json is untrusted input, so we validate the shape and
+  // clamp string lengths before it ever reaches the loader / IndexedDB.
+  const MAX_STR = 4000;          // any single name/label
+  const MAX_LAYERS_PER_SCENE = 500;
+  const MAX_SCENES = 500;
+
+  function _clampStr(v, fallback = '') {
+    if (typeof v !== 'string') return fallback;
+    return v.length > MAX_STR ? v.slice(0, MAX_STR) : v;
+  }
+
+  // Returns { ok:true, state } or { ok:false, error }
+  function _validateProject(payload) {
+    if (!payload || typeof payload !== 'object') return { ok: false, error: 'fichier illisible' };
+    if (payload.app !== 'inkstudio') return { ok: false, error: 'ce n\'est pas un projet InkStudio' };
+    const st = payload.state;
+    if (!st || typeof st !== 'object') return { ok: false, error: 'projet sans données' };
+
+    // Canvas size must be sane numbers
+    if (st.canvasW != null && (!Number.isFinite(st.canvasW) || st.canvasW <= 0 || st.canvasW > 8000)) return { ok: false, error: 'taille de canvas invalide' };
+    if (st.canvasH != null && (!Number.isFinite(st.canvasH) || st.canvasH <= 0 || st.canvasH > 8000)) return { ok: false, error: 'taille de canvas invalide' };
+
+    // Scenes: must be an array of the expected shape, within limits
+    if (st.scenes != null) {
+      if (!Array.isArray(st.scenes)) return { ok: false, error: 'liste de scènes invalide' };
+      if (st.scenes.length > MAX_SCENES) return { ok: false, error: `trop de scènes (> ${MAX_SCENES})` };
+      for (const sc of st.scenes) {
+        if (!sc || typeof sc !== 'object') return { ok: false, error: 'scène corrompue' };
+        sc.name = _clampStr(sc.name, 'Scene');
+        const layers = sc.layers;
+        if (layers != null) {
+          if (!Array.isArray(layers)) return { ok: false, error: 'calques invalides' };
+          if (layers.length > MAX_LAYERS_PER_SCENE) return { ok: false, error: `trop de calques (> ${MAX_LAYERS_PER_SCENE})` };
+          for (const l of layers) {
+            if (!l || typeof l !== 'object') return { ok: false, error: 'calque corrompu' };
+            l.name = _clampStr(l.name, 'Layer');
+            // Data URLs must actually be strings (they feed <img>.src / decode)
+            if (l.imageDataURL != null && typeof l.imageDataURL !== 'string') return { ok: false, error: 'image de calque invalide' };
+            if (l.gifSrc != null && typeof l.gifSrc !== 'string') return { ok: false, error: 'GIF de calque invalide' };
+          }
+        }
+      }
+    }
+    // Voice-over data URLs, if present, must be strings
+    const vo = st.voiceover;
+    if (vo && typeof vo === 'object') {
+      if (vo.dataURL != null && typeof vo.dataURL !== 'string') return { ok: false, error: 'voix off invalide' };
+      if (vo.music && typeof vo.music === 'object' && vo.music.dataURL != null && typeof vo.music.dataURL !== 'string') return { ok: false, error: 'musique invalide' };
+    }
+    return { ok: true, state: st };
+  }
+
   function importProjectFile(file) {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const payload = JSON.parse(reader.result);
-        if (!payload || payload.app !== 'inkstudio' || !payload.state) {
-          showToast('⚠️ Not a valid InkStudio project file', null, 3500);
+        let payload;
+        try { payload = JSON.parse(reader.result); }
+        catch { showToast('⚠️ Fichier JSON illisible', null, 3500); return; }
+
+        const check = _validateProject(payload);
+        if (!check.ok) {
+          showToast(`⚠️ Import refusé : ${check.error}`, null, 4000);
           return;
         }
-        if (!db) { showToast('⚠️ Storage unavailable', null, 3000); return; }
+        if (!db) { showToast('⚠️ Stockage indisponible', null, 3000); return; }
         const project = {
-          name: payload.name || 'Imported Project',
+          name: _clampStr(payload.name, 'Imported Project') || 'Imported Project',
           createdAt: new Date().toISOString(),
           modifiedAt: new Date().toISOString(),
-          state: payload.state,
+          state: check.state,
         };
         const tx = db.transaction(['projects'], 'readwrite');
         const store = tx.objectStore('projects');
@@ -84,12 +141,12 @@
         req.onsuccess = () => {
           loadProject(req.result);
           if (typeof refreshProjectsList === 'function') refreshProjectsList();
-          showToast(`Imported "${project.name}"`);
+          showToast(`Projet « ${project.name} » importé`);
         };
-        req.onerror = () => showToast('⚠️ Could not store imported project', null, 3500);
+        req.onerror = () => showToast('⚠️ Impossible d\'enregistrer le projet importé', null, 3500);
       } catch (err) {
         console.error('Project import failed:', err);
-        showToast('⚠️ Could not read that project file', null, 3500);
+        showToast('⚠️ Impossible de lire ce fichier projet', null, 3500);
       }
     };
     reader.readAsText(file);
