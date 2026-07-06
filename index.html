@@ -4403,7 +4403,8 @@ function saveProject(projectId = currentProjectId) {
         // InkStudio: multi-scene + voice-over payloads
         scenes: window.SceneManager ? SceneManager.serialize() : null,
         sceneIndex: window.SceneManager ? SceneManager.currentIndex() : 0,
-        voiceover: window.AudioVO ? AudioVO.serialize() : null
+        voiceover: window.AudioVO ? AudioVO.serialize() : null,
+        subtitles: window.SubKit ? SubKit.serialize() : null
       };
       
       // Update project data
@@ -4706,6 +4707,7 @@ function loadProject(projectId) {
       // InkStudio: restore scenes + voice-over (legacy projects → single scene)
       if (window.SceneManager) SceneManager.onProjectLoaded(savedState);
       if (window.AudioVO) AudioVO.onProjectLoaded(savedState);
+      if (window.SubKit) SubKit.onProjectLoaded(savedState);
     }
   };
   } catch (err) {
@@ -5686,6 +5688,7 @@ window.addEventListener('load', () => {
 <!-- ════════════════════════════════════════════════════════════════════════
      ANIMATION ENGINE (external module)
 ════════════════════════════════════════════════════════════════════════ -->
+<script src="src/pure.js"></script>
 <script src="animations.js"></script>
 
 <script>
@@ -9670,6 +9673,7 @@ function recordWebM(progressText, progressBar) {
           rctx.drawImage(handCanvas, 0, 0);
         }
         if (window.Watermark) Watermark.draw(rctx, state.canvasW, state.canvasH);
+        if (window.SubKit) SubKit.drawBurn(rctx, state.canvasW, state.canvasH);
         requestAnimationFrame(syncLoop);
       })();
       
@@ -9841,6 +9845,7 @@ function recordMP4(progressText, progressBar) {
           rctx.drawImage(handCanvas, 0, 0, state.canvasW, state.canvasH, 0, 0, W, H);
         }
         if (window.Watermark) Watermark.draw(rctx, W, H);
+        if (window.SubKit) SubKit.drawBurn(rctx, W, H);
 
         const ts       = Math.round((frameCount / FPS) * 1_000_000); // microseconds
         const duration = Math.round(1_000_000 / FPS);
@@ -11337,5 +11342,6 @@ function obEnd() {
 <script src="js/extras.js"></script>
 <script src="js/studio.js"></script>
 <script src="js/pro.js"></script>
+<script src="js/subtitles.js"></script>
 </body>
 </html>

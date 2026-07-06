@@ -1356,6 +1356,8 @@
     hasAudio, duration, time, isPlaying,
     playheadTime: () => (isPlaying() ? time() : pausedAt),
     autoLayerSync, autoLayerSyncAll, removeSilences,
+    speechSegments: () => (buffer ? _speechIntervals().map(iv => iv.slice()) : []),
+    previewMode: () => previewMode,
     startPlayback, stopPlayback, pausePlayback, seekTo,
     waitUntil, waitUntilEnd,
     createExportStream,

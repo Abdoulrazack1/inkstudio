@@ -83,6 +83,13 @@ InkStudio is my heavily reworked fork of [Inkplainer](https://github.com/NadirWe
 - Pick **color, thickness and angle** before placing — and change them **after** placement too (Forme section on the layer): the shape re-renders with the exact same strokes
 - Shapes are normal layers: they get hand-drawn by the animation, support timing (départ/durée), flip, duplicate, and persist with the project
 
+### 💬 Subtitles (`js/subtitles.js`)
+- **Subtitle track** timed to the voice-over: add a cue at the playhead, or **✨ Auto** to create one empty cue per detected speech burst (you type the text)
+- Inline editor (start / end / text per cue), live preview over the canvas, **MAJ** (all-caps TikTok look)
+- **Burned into the exported video** (WebM & MP4) at the safe-zone, with outline + optional box
+- **Export `.srt` / `.vtt`** for YouTube/accessibility
+- *Automatic transcription (auto-filling the text) is the only part that needs a speech-to-text model — everything else works offline today.*
+
 ### 🏭 Production tools (`js/pro.js`)
 - **Platform export presets**: TikTok / Reels / Shorts (9:16), YouTube (16:9), Square (1:1) — one click sets ratio, resolution and safe-zone
 - **Framerate** 24/30/60 fps and **custom bitrate** (Mbps) in the export banner
@@ -151,6 +158,9 @@ Open `http://localhost:3000` (or the port shown) in **Chrome or Edge** (best sup
 | `js/extras.js` | **InkStudio** — portable project files, extra shortcuts |
 | `js/studio.js` | **InkStudio** — zoom/pan/focus, GIF engine, safe-zone, stickers, presets |
 | `js/pro.js` | **InkStudio** — export presets, watermark, font/SVG import, silences, checkpoints |
+| `js/subtitles.js` | **InkStudio** — subtitle track, burn-in, SRT/VTT export |
+| `src/pure.js` | **InkStudio** — extracted pure logic (escaping, captions, timing, validation), unit-tested |
+| `tests/` | **InkStudio** — `node --test` unit tests · CI in `.github/workflows/ci.yml` |
 | `electron/main.js` | **InkStudio** — desktop shell (internal static server + window) |
 
 ## 📜 License & credits
